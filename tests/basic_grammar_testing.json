@@ -1,0 +1,137 @@
+[
+  {
+    "id": "TC_EASY_001",
+    "difficulty": "easy",
+    "category": "sandhi_vowel_dirgha",
+    "description": "Simple Savarna Dirgha (long vowel) sandhi. Tests basic a + a = ā split.",
+    "input_string": "devālayaḥ",
+    "expected_tokens": ["deva", "ālayaḥ"],
+    "expected_roots": ["deva", "ālaya"]
+  },
+  {
+    "id": "TC_EASY_002",
+    "difficulty": "easy",
+    "category": "sandhi_vowel_guna",
+    "description": "Simple Guna sandhi. Tests a + i = e split.",
+    "input_string": "sūryodayaḥ",
+    "expected_tokens": ["sūrya", "udayaḥ"],
+    "expected_roots": ["sūrya", "udaya"]
+  },
+  {
+    "id": "TC_EASY_003",
+    "difficulty": "easy",
+    "category": "tokenization_no_sandhi",
+    "description": "Standard spaced sentence without phonetic mergers.",
+    "input_string": "rāmaḥ gacchati",
+    "expected_tokens": ["rāmaḥ", "gacchati"],
+    "expected_roots": ["rāma", "gam"]
+  },
+  {
+    "id": "TC_MED_001",
+    "difficulty": "medium",
+    "category": "sandhi_visarga_avagraha",
+    "description": "Visarga sandhi followed by 'a' causing an avagraha (').",
+    "input_string": "so'pi",
+    "expected_tokens": ["saḥ", "api"],
+    "expected_roots": ["tad", "api"]
+  },
+  {
+    "id": "TC_MED_002",
+    "difficulty": "medium",
+    "category": "sandhi_consonant_assimilation",
+    "description": "Consonant (Hal) sandhi where 't' assimilates to 'n' before a nasal.",
+    "input_string": "jagannāthaḥ",
+    "expected_tokens": ["jagat", "nāthaḥ"],
+    "expected_roots": ["jagat", "nātha"]
+  },
+  {
+    "id": "TC_MED_003",
+    "difficulty": "medium",
+    "category": "samasa_dvandva",
+    "description": "Dual copulative compound. Vector reconstruction must identify both independent entities.",
+    "input_string": "sukhaduḥkhe",
+    "expected_tokens": ["sukha", "duḥkhe"],
+    "expected_roots": ["sukha", "duḥkha"]
+  },
+  {
+    "id": "TC_MED_004",
+    "difficulty": "medium",
+    "category": "samasa_tatpurusha",
+    "description": "Determinative compound. Case relationship is hidden inside the compound.",
+    "input_string": "dharmakṣetre",
+    "expected_tokens": ["dharma", "kṣetre"],
+    "expected_roots": ["dharma", "kṣetra"]
+  },
+  {
+    "id": "TC_HARD_001",
+    "difficulty": "hard",
+    "category": "sandhi_multi_part",
+    "description": "A continuous string requiring multiple recursive sandhi splits (i + e = ye, a + a = ā).",
+    "input_string": "nāstyeva",
+    "expected_tokens": ["na", "asti", "eva"],
+    "expected_roots": ["na", "as", "eva"]
+  },
+  {
+    "id": "TC_HARD_002",
+    "difficulty": "hard",
+    "category": "sandhi_consonant_complex",
+    "description": "Complex consonant sandhi where t + ś becomes c + ch.",
+    "input_string": "tacchrutvā",
+    "expected_tokens": ["tat", "śrutvā"],
+    "expected_roots": ["tad", "śru"]
+  },
+  {
+    "id": "TC_HARD_003",
+    "difficulty": "hard",
+    "category": "enclitic_attachment",
+    "description": "Handling trailing enclitics (ca) merging with visarga.",
+    "input_string": "rāmaśca",
+    "expected_tokens": ["rāmaḥ", "ca"],
+    "expected_roots": ["rāma", "ca"]
+  },
+  {
+    "id": "TC_HARD_004",
+    "difficulty": "hard",
+    "category": "samasa_bahuvrihi",
+    "description": "Exocentric compound. Morphological engine must map it to a third entity.",
+    "input_string": "pītāmbaraḥ",
+    "expected_tokens": ["pīta", "ambaraḥ"],
+    "expected_roots": ["pīta", "ambara"]
+  },
+  {
+    "id": "TC_EXTREME_001",
+    "difficulty": "extreme",
+    "category": "verse_continuous_sandhi",
+    "description": "Famous Gita verse segment. Tests complex visarga drop, yan sandhi, and enclitics combined.",
+    "input_string": "karmaṇyevādhikāraste",
+    "expected_tokens": ["karmaṇi", "eva", "adhikāraḥ", "te"],
+    "expected_roots": ["karman", "eva", "adhikāra", "yuṣmad"]
+  },
+  {
+    "id": "TC_EXTREME_002",
+    "difficulty": "extreme",
+    "category": "samasa_deep_recursion",
+    "description": "Multi-layered compound requiring recursive decomposition down to stems.",
+    "input_string": "kṣetrakṣetrajñayorjñānam",
+    "expected_tokens": ["kṣetra", "kṣetrajñayoḥ", "jñānam"],
+    "expected_roots": ["kṣetra", "kṣetrajña", "jñāna"]
+  },
+  {
+    "id": "TC_EXTREME_003",
+    "difficulty": "extreme",
+    "category": "ambiguity_resolution",
+    "description": "Apposition word order test. Evaluates if the parser can split vāgarthāviva correctly without failing on false substrings.",
+    "input_string": "vāgarthāviva",
+    "expected_tokens": ["vāk", "arthau", "iva"],
+    "expected_roots": ["vāk", "artha", "iva"]
+  },
+  {
+    "id": "TC_EXTREME_004",
+    "difficulty": "extreme",
+    "category": "sandhi_elided_vowel",
+    "description": "Highly complex string featuring an elided 'a' across a word boundary without a printed avagraha (common in raw manuscripts).",
+    "input_string": "saṅgostvakarmaṇi",
+    "expected_tokens": ["saṅgaḥ", "astu", "akarmaṇi"],
+    "expected_roots": ["saṅga", "as", "akarman"]
+  }
+]

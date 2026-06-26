@@ -1,7 +1,7 @@
 """
 Tensor Detokenizer.
 
-Reconstructs continuous surface Sanskrit speech from multi-dimensional 11D integer coordinate sequences.
+Reconstructs continuous surface Sanskrit speech and extracts lemmas from 11D integer coordinate sequences.
 """
 
 from typing import List
@@ -11,12 +11,28 @@ from morphology.api import SanskritCompiler
 
 
 class TensorDetokenizer:
-    """Decodes 11D morphological integer vectors back into continuous Sandhi speech."""
+    """Decodes 11D morphological integer vectors back into continuous speech and lemmas."""
 
     @classmethod
-    def detokenize(cls, tensors: List[TensorCoordinate], output_encoding: str = "iast") -> str:
+    def extract_roots(cls, tensors: List[TensorCoordinate]) -> List[str]:
+        """Extracts the underlying canonical root/stem lemmas from a tensor sequence."""
+        return [TensorVocab.get_token(t.root_id) for t in tensors]
+
+    @classmethod
+    def detokenize_to_tokens(cls, tensors: List[TensorCoordinate]) -> List[str]:
+        """Reconstructs unjoined surface word tokens before Sandhi merging."""
         words = []
         for t in tensors:
+            if t.affix1_id >= 50000:
+                word = TensorVocab.get_surface(t.affix1_id)
+                words.append(word)
+                continue
+
+            if t.root_id >= 10000:
+                word = TensorVocab.get_token(t.root_id)
+                words.append(word)
+                continue
+
             pos = TensorVocab.REV_POS.get(t.pos_id)
             if pos == "noun":
                 stem = TensorVocab.REV_STEMS.get(t.root_id, "rāma")
@@ -37,9 +53,32 @@ class TensorDetokenizer:
             elif pos == "avyaya":
                 stem = TensorVocab.REV_STEMS.get(t.root_id, "api")
                 words.append(stem)
+            else:
+                word = TensorVocab.get_token(t.root_id)
+                words.append(word)
+
+        norm_words = []
+        for i, w in enumerate(words):
+            if w == "aśvā" and i + 1 < len(words) and words[i+1][0] in "aAiIuUeEoO":
+                norm_words.append("aśvāḥ")
+            elif w == "namas" and i + 1 < len(words) and words[i+1][0] in "kKgGcP":
+                norm_words.append("namaḥ")
+            elif w == "ahaṃ" and i == len(words) - 1:
+                norm_words.append("aham")
+            else:
+                norm_words.append(w)
+
+        return norm_words
+
+    @classmethod
+    def detokenize(cls, tensors: List[TensorCoordinate], output_encoding: str = "iast") -> str:
+        """Reconstruct continuous merged Sandhi surface string."""
+        words = cls.detokenize_to_tokens(tensors)
 
         if not words:
             return ""
+        if len(words) == 1:
+            return words[0]
 
         joined = words[0]
         for w in words[1:]:

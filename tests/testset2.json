@@ -1,0 +1,92 @@
+[
+  {
+    "id": "TC_UNSEEN_001",
+    "difficulty": "medium",
+    "category": "sandhi_vriddhi",
+    "description": "Vriddhi sandhi testing open vocabulary split.",
+    "input_string": "tathaiva",
+    "expected_tokens": ["tathā", "eva"],
+    "expected_roots": ["tathā", "eva"]
+  },
+  {
+    "id": "TC_UNSEEN_002",
+    "difficulty": "medium",
+    "category": "sandhi_jashatva",
+    "description": "Consonant voicing stop sandhi.",
+    "input_string": "vāgīśaḥ",
+    "expected_tokens": ["vāk", "īśaḥ"],
+    "expected_roots": ["vāk", "īśa"]
+  },
+  {
+    "id": "TC_UNSEEN_003",
+    "difficulty": "hard",
+    "category": "sandhi_visarga",
+    "description": "Visarga sibilant assimilation before k.",
+    "input_string": "namaskaroti",
+    "expected_tokens": ["namaḥ", "karoti"],
+    "expected_roots": ["namas", "kṛ"]
+  },
+  {
+    "id": "TC_UNSEEN_004",
+    "difficulty": "medium",
+    "category": "sandhi_savarna",
+    "description": "Savarna Dirgha compound join.",
+    "input_string": "tarucchāyā",
+    "expected_tokens": ["taru", "chāyā"],
+    "expected_roots": ["taru", "chāyā"]
+  },
+  {
+    "id": "TC_UNSEEN_005",
+    "difficulty": "hard",
+    "category": "sandhi_visarga_uto",
+    "description": "Visarga to o before pronoun.",
+    "input_string": "ko'haṃ",
+    "expected_tokens": ["kaḥ", "aham"],
+    "expected_roots": ["kim", "asmad"]
+  },
+  {
+    "id": "TC_UNSEEN_006",
+    "difficulty": "hard",
+    "category": "samasa_dvandva",
+    "description": "Irregular stem dual compound.",
+    "input_string": "mātāpitarau",
+    "expected_tokens": ["mātā", "pitarau"],
+    "expected_roots": ["mātṛ", "pitṛ"]
+  },
+  {
+    "id": "TC_UNSEEN_007",
+    "difficulty": "hard",
+    "category": "sandhi_yan",
+    "description": "Yaṇ sandhi split across prefixes.",
+    "input_string": "pratyutpannaḥ",
+    "expected_tokens": ["prati", "utpannaḥ"],
+    "expected_roots": ["prati", "utpanna"]
+  },
+  {
+    "id": "TC_UNSEEN_008",
+    "difficulty": "extreme",
+    "category": "sandhi_complex",
+    "description": "Recursive multi-word continuous sandhi.",
+    "input_string": "śivaścāsīt",
+    "expected_tokens": ["śivaḥ", "ca", "āsīt"],
+    "expected_roots": ["śiva", "ca", "as"]
+  },
+  {
+    "id": "TC_UNSEEN_009",
+    "difficulty": "extreme",
+    "category": "sandhi_guna_visarga",
+    "description": "Guṇa and visarga r sandhi.",
+    "input_string": "maharṣirvyāsaḥ",
+    "expected_tokens": ["mahā", "ṛṣiḥ", "vyāsaḥ"],
+    "expected_roots": ["mahat", "ṛṣi", "vyāsa"]
+  },
+  {
+    "id": "TC_UNSEEN_010",
+    "difficulty": "hard",
+    "category": "sentence_spaced",
+    "description": "Multi word spaced test case.",
+    "input_string": "aśvā amī",
+    "expected_tokens": ["aśvāḥ", "amī"],
+    "expected_roots": ["aśva", "adas"]
+  }
+]

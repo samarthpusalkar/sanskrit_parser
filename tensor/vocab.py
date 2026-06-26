@@ -1,10 +1,11 @@
 """
 Tensor Vocabulary Database.
 
-Maps morphological features, roots, stems, and Pāṇinian categories to integer IDs.
+Maps morphological features, lemmas (roots/stems), and surface tokens to integer IDs.
 """
 
-from typing import Dict, Optional
+from typing import Dict
+from core.lemmatizer import UniversalLemmatizer
 
 
 class TensorVocab:
@@ -25,3 +26,61 @@ class TensorVocab:
 
     STEMS = {"rāma": 2001, "īśa": 2002, "yadi": 2003, "api": 2004}
     REV_STEMS = {v: k for k, v in STEMS.items()}
+
+    _TOKEN_TO_ID: Dict[str, int] = {}
+    _ID_TO_TOKEN: Dict[int, str] = {}
+    _NEXT_ID: int = 10000
+
+    _SURFACE_TO_ID: Dict[str, int] = {}
+    _ID_TO_SURFACE: Dict[int, str] = {}
+    _NEXT_SURFACE_ID: int = 50000
+
+    @classmethod
+    def is_plausible_token(cls, token: str) -> bool:
+        """Check if a candidate string is a plausible Sanskrit vocabulary token."""
+        if not token or (len(token) == 1 and token not in {"i"}):
+            return False
+        lemma = UniversalLemmatizer.lemmatize(token)
+        if lemma in UniversalLemmatizer.KNOWN_LEMMAS:
+            return True
+        if token in UniversalLemmatizer.LEMMA_MAP:
+            return True
+        if lemma in cls.ROOTS or lemma in cls.STEMS:
+            return True
+        return False
+
+    @classmethod
+    def get_id(cls, token: str) -> int:
+        """Get or create integer ID for a root lemma."""
+        if token in cls.ROOTS:
+            return cls.ROOTS[token]
+        if token in cls.STEMS:
+            return cls.STEMS[token]
+        if token not in cls._TOKEN_TO_ID:
+            cls._TOKEN_TO_ID[token] = cls._NEXT_ID
+            cls._ID_TO_TOKEN[cls._NEXT_ID] = token
+            cls._NEXT_ID += 1
+        return cls._TOKEN_TO_ID[token]
+
+    @classmethod
+    def get_token(cls, token_id: int) -> str:
+        """Retrieve root lemma string from integer ID."""
+        if token_id in cls.REV_ROOTS:
+            return cls.REV_ROOTS[token_id]
+        if token_id in cls.REV_STEMS:
+            return cls.REV_STEMS[token_id]
+        return cls._ID_TO_TOKEN.get(token_id, "")
+
+    @classmethod
+    def get_surface_id(cls, surface: str) -> int:
+        """Get or create integer ID for a surface inflected token."""
+        if surface not in cls._SURFACE_TO_ID:
+            cls._SURFACE_TO_ID[surface] = cls._NEXT_SURFACE_ID
+            cls._ID_TO_SURFACE[cls._NEXT_SURFACE_ID] = surface
+            cls._NEXT_SURFACE_ID += 1
+        return cls._SURFACE_TO_ID[surface]
+
+    @classmethod
+    def get_surface(cls, surface_id: int) -> str:
+        """Retrieve surface token string from integer ID."""
+        return cls._ID_TO_SURFACE.get(surface_id, "")

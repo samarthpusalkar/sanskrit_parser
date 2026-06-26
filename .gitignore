@@ -98,3 +98,4 @@ Thumbs.db
 *.log
 tmp/
 temp/
+tests/results/
