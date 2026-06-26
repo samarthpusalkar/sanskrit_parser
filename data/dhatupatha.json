@@ -1,0 +1,144 @@
+{
+  "roots": [
+    {
+      "id": 1,
+      "root": "BU",
+      "raw_upadesha": "BUrt",
+      "gana": 1,
+      "pada": "parasmaipada",
+      "set_status": "set",
+      "gloss": "sattāyām (to be)"
+    },
+    {
+      "id": 2,
+      "root": "eD",
+      "raw_upadesha": "eDa~",
+      "gana": 1,
+      "pada": "atmanepada",
+      "set_status": "set",
+      "gloss": "vṛddhau (to grow)"
+    },
+    {
+      "id": 3,
+      "root": "ad",
+      "raw_upadesha": "ada~",
+      "gana": 2,
+      "pada": "parasmaipada",
+      "set_status": "anit",
+      "gloss": "bhakṣaṇe (to eat)"
+    },
+    {
+      "id": 4,
+      "root": "hu",
+      "raw_upadesha": "hu\\",
+      "gana": 3,
+      "pada": "parasmaipada",
+      "set_status": "anit",
+      "gloss": "dānādana-haomaeṣu (to offer)"
+    },
+    {
+      "id": 5,
+      "root": "div",
+      "raw_upadesha": "divu~",
+      "gana": 4,
+      "pada": "parasmaipada",
+      "set_status": "anit",
+      "gloss": "krīḍā-vijigīṣā... (to play/shine)"
+    },
+    {
+      "id": 6,
+      "root": "su",
+      "raw_upadesha": "zu\\Y",
+      "gana": 5,
+      "pada": "ubhayapada",
+      "set_status": "anit",
+      "gloss": "abhiṣave (to press out)"
+    },
+    {
+      "id": 7,
+      "root": "tud",
+      "raw_upadesha": "tuda~^",
+      "gana": 6,
+      "pada": "ubhayapada",
+      "set_status": "anit",
+      "gloss": "vyathane (to strike)"
+    },
+    {
+      "id": 8,
+      "root": "ruD",
+      "raw_upadesha": "ruDir^",
+      "gana": 7,
+      "pada": "ubhayapada",
+      "set_status": "anit",
+      "gloss": "āvaraṇe (to obstruct)"
+    },
+    {
+      "id": 9,
+      "root": "tan",
+      "raw_upadesha": "tanu~^",
+      "gana": 8,
+      "pada": "ubhayapada",
+      "set_status": "set",
+      "gloss": "vistāre (to stretch)"
+    },
+    {
+      "id": 10,
+      "root": "krI",
+      "raw_upadesha": "qukrI\\Y",
+      "gana": 9,
+      "pada": "ubhayapada",
+      "set_status": "anit",
+      "gloss": "dravyavinimaye (to buy)"
+    },
+    {
+      "id": 11,
+      "root": "cur",
+      "raw_upadesha": "cura~",
+      "gana": 10,
+      "pada": "ubhayapada",
+      "set_status": "set",
+      "gloss": "steyae (to steal)"
+    },
+    {
+      "id": 12,
+      "root": "gam",
+      "raw_upadesha": "gamf~",
+      "gana": 1,
+      "pada": "parasmaipada",
+      "set_status": "anit",
+      "gloss": "gatau (to go)"
+    }
+  ],
+  "nominal_stems": [
+    {
+      "stem": "rAma",
+      "gender": "masculine",
+      "antya": "a"
+    },
+    {
+      "stem": "hari",
+      "gender": "masculine",
+      "antya": "i"
+    },
+    {
+      "stem": "guru",
+      "gender": "masculine",
+      "antya": "u"
+    },
+    {
+      "stem": "ramA",
+      "gender": "feminine",
+      "antya": "A"
+    },
+    {
+      "stem": "jYAna",
+      "gender": "neuter",
+      "antya": "a"
+    },
+    {
+      "stem": "rAjan",
+      "gender": "masculine",
+      "antya": "n"
+    }
+  ]
+}

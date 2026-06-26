@@ -1,0 +1,3 @@
+"""
+Declarative JSON Sūtra Rulebase.
+"""

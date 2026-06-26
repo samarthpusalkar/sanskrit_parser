@@ -1,0 +1,104 @@
+[
+  {
+    "id": "6.1.77",
+    "name": "iko yanaci",
+    "rule_type": "vidhi_sandhi",
+    "priority": 100,
+    "target_context": {
+      "pratyahara": "iK",
+      "anal_vidhi": true
+    },
+    "right_context": {
+      "pratyahara": "aC",
+      "anal_vidhi": true
+    },
+    "operation": {
+      "op_type": "substitute",
+      "substitute": "yan"
+    },
+    "governance": {
+      "domain": "sapada"
+    }
+  },
+  {
+    "id": "6.1.101",
+    "name": "akah savarne dirghah",
+    "rule_type": "vidhi_sandhi",
+    "priority": 200,
+    "target_context": {
+      "pratyahara": "aK",
+      "anal_vidhi": true
+    },
+    "right_context": {
+      "pratyahara": "aK",
+      "anal_vidhi": true,
+      "savarna_with_target": true
+    },
+    "operation": {
+      "op_type": "merge_sandhi",
+      "substitute": "dirgha"
+    },
+    "governance": {
+      "domain": "sapada"
+    }
+  },
+  {
+    "id": "6.1.87",
+    "name": "adgunah",
+    "rule_type": "vidhi_sandhi",
+    "priority": 150,
+    "target_context": {
+      "exact_text": "a,A",
+      "anal_vidhi": true
+    },
+    "right_context": {
+      "pratyahara": "iK",
+      "anal_vidhi": true
+    },
+    "operation": {
+      "op_type": "merge_sandhi",
+      "substitute": "guna"
+    },
+    "governance": {
+      "domain": "sapada"
+    }
+  },
+  {
+    "id": "6.1.88",
+    "name": "vrddhireci",
+    "rule_type": "vidhi_sandhi",
+    "priority": 180,
+    "target_context": {
+      "exact_text": "a,A",
+      "anal_vidhi": true
+    },
+    "right_context": {
+      "pratyahara": "eC",
+      "anal_vidhi": true
+    },
+    "operation": {
+      "op_type": "merge_sandhi",
+      "substitute": "vriddhi"
+    },
+    "governance": {
+      "domain": "sapada"
+    }
+  },
+  {
+    "id": "8.3.15",
+    "name": "kharavasanayoḥ visargah",
+    "rule_type": "vidhi_sandhi",
+    "priority": 50,
+    "target_context": {
+      "exact_text": "s",
+      "anal_vidhi": true
+    },
+    "operation": {
+      "op_type": "substitute",
+      "substitute": "H"
+    },
+    "governance": {
+      "domain": "tripadi"
+    }
+  }
+]
