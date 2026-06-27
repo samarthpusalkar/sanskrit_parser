@@ -19,12 +19,60 @@ PRATYAHARA_STEMS = {
     "acAH": "aC", "halAH": "haL"
 }
 
+PANINIAN_META_TERMS = {
+    "visarjanIya": "H", "visarjanIyaH": "H", "visarga": "H", "ru": "r", "roH": "r",
+    "anusvAra": "M", "anusvAraH": "M",
+    "anunAsika": "~", "anunAsikaH": "~",
+    "ut": "u", "it": "i", "at": "a", "At": "A",
+}
+
+PANINIAN_GOVERNANCE_FLAGS = {
+    "viBAzA", "bahulam", "saMyogAdayaH", "nityam", "anudAttam", "svaritaH", "svaritam",
+    "udAttaH", "udAttam", "anudAttaH", "parasavarRaH", "savarRaH", "laGuprayatnataraH",
+    "pUrvam", "param", "antaram", "Amreqitam", "praTamA", "dvitIyA", "tftIyA", "sAkANkzam",
+    "avaDAraRam", "sAmAnyavacanam", "asidDam", "akazaH", "jaSaH"
+}
+
 
 from core.shiva_sutras import PratyaharaResolver
 
 
 class SutraAstBuilder:
     """Converts a resolved list of PadaTokens into a Pāṇinian RuleSpec AST."""
+
+    @classmethod
+    def _inherit_anuvritti_substitute(cls, sutra_id: str) -> str:
+        """Lightweight lookback window querying SQLite for inherited replacements."""
+        import sqlite3, os
+        db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "sanskrit_master.db")
+        if not os.path.exists(db_path):
+            return ""
+        try:
+            conn = sqlite3.connect(db_path)
+            c = conn.cursor()
+            parts = sutra_id.split(".")
+            if len(parts) != 3:
+                return ""
+            ady, pad, num = int(parts[0]), int(parts[1]), int(parts[2])
+            for prev_num in range(num - 1, max(0, num - 6), -1):
+                prev_id = f"{ady}.{pad}.{prev_num}"
+                row = c.execute("SELECT pada_cheda FROM sutras WHERE id=?", (prev_id,)).fetchone()
+                if row and row[0]:
+                    from compiler.pada_cheda import PadaChedaParser
+                    prev_tokens = PadaChedaParser.parse(row[0])
+                    for pt in prev_tokens:
+                        if pt.is_substitute:
+                            norm = pt.slp1[:-1] if pt.slp1.endswith(("s", "H")) else pt.slp1
+                            if norm in PANINIAN_META_TERMS or pt.slp1 in PANINIAN_META_TERMS:
+                                conn.close()
+                                return PANINIAN_META_TERMS.get(pt.slp1, PANINIAN_META_TERMS.get(norm, ""))
+                            if pt.slp1 in {"ut", "u"}:
+                                conn.close()
+                                return "u"
+            conn.close()
+        except Exception:
+            pass
+        return ""
 
     @classmethod
     def _resolve_pratyahara(cls, slp: str) -> Optional[str]:
@@ -65,7 +113,8 @@ class SutraAstBuilder:
                 if prat:
                     target_cond.pratyahara = prat
                 else:
-                    target_cond.exact_text = slp[:-1] if slp.endswith(("s", "H")) else slp
+                    norm = slp[:-1] if slp.endswith(("s", "H")) else slp
+                    target_cond.exact_text = PANINIAN_META_TERMS.get(slp, PANINIAN_META_TERMS.get(norm, norm))
 
             # 2. Right Context condition (Locative / 7th case)
             elif t.is_right_context:
@@ -74,7 +123,8 @@ class SutraAstBuilder:
                 if prat:
                     right_cond.pratyahara = prat
                 else:
-                    right_cond.exact_text = slp[:-1] if slp.endswith(("i", "e")) else slp
+                    norm = slp[:-1] if slp.endswith(("i", "e")) else slp
+                    right_cond.exact_text = PANINIAN_META_TERMS.get(slp, PANINIAN_META_TERMS.get(norm, norm))
 
             # 3. Left Context condition (Ablative / 5th case)
             elif t.is_left_context:
@@ -84,7 +134,7 @@ class SutraAstBuilder:
                     left_cond.pratyahara = prat
                 else:
                     norm = slp[:-1] if slp.endswith(("s", "H", "t")) else slp
-                    left_cond.exact_text = norm
+                    left_cond.exact_text = PANINIAN_META_TERMS.get(slp, PANINIAN_META_TERMS.get(norm, norm))
                 if sutra_id.startswith("6.1.") and not has_target:
                     has_target = True
                     if prat:
@@ -97,7 +147,10 @@ class SutraAstBuilder:
             # 4. Substitute / Operation (Nominative / 1st case)
             elif t.is_substitute:
                 norm = slp[:-1] if slp.endswith(("s", "H")) else slp
-                if norm in {"lopa", "adarSana"}:
+                if slp in PANINIAN_GOVERNANCE_FLAGS or norm in PANINIAN_GOVERNANCE_FLAGS:
+                    op_type = "governance"
+                    sub_val = slp
+                elif norm in {"lopa", "adarSana"}:
                     op_type = "elide"
                     sub_val = None
                 elif norm in {"guRa", "guRa-vfdDI"}:
@@ -119,9 +172,18 @@ class SutraAstBuilder:
                 elif norm in {"yaR", "jaS", "Scu", "ac", "hal"}:
                     op_type = "bijection_substitute"
                     sub_val = norm
+                elif slp in PANINIAN_META_TERMS or norm in PANINIAN_META_TERMS:
+                    op_type = "exact_substitute"
+                    sub_val = PANINIAN_META_TERMS.get(slp, PANINIAN_META_TERMS.get(norm))
                 else:
                     op_type = "exact_substitute"
-                    sub_val = "H" if norm in {"visarga", "H"} else slp
+                    sub_val = slp
+
+        if (op_type in {"substitute", "exact_substitute"} and not sub_val) or sub_val == "":
+            inh = cls._inherit_anuvritti_substitute(sutra_id)
+            if inh:
+                op_type = "exact_substitute"
+                sub_val = inh
 
         if not has_target:
             target_cond.pratyahara = "aC"

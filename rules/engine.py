@@ -30,18 +30,32 @@ class UniversalRuleEngine:
         self._rules.append(rule)
 
     def _get_sandhi_ordered_rules(self) -> List[PaniniRule]:
-        def _sort_key(r: PaniniRule) -> int:
-            op_type = getattr(getattr(r, "spec", None), "operation", None)
-            op_name = getattr(op_type, "op_type", "") if op_type else ""
+        def _sort_key(r: PaniniRule) -> Tuple[int, int, float]:
+            spec = getattr(r, "spec", None)
+            domain = getattr(spec, "governance", {}).get("domain", "sapada") if spec else "sapada"
+            domain_rank = 1 if domain == "tripadi" or r.sutra_id.startswith(("8.2.", "8.3.", "8.4.")) else 0
+
+            # Specificity rank (Apavāda over Utsarga)
+            op = getattr(spec, "operation", None) if spec else None
+            op_name = getattr(op, "op_type", "") if op else ""
             if op_name in {"ekadesha_savarna_dirgha", "ekadesha_vriddhi", "merge_savarna"}:
-                return 0
-            if op_name == "ekadesha_guna":
-                return 1
-            if op_name == "bijection_substitute":
-                return 2
-            if r.sutra_id.startswith(("6.1.", "8.2.", "8.3.", "8.4.", "7.2.")):
-                return 3
-            return 4
+                spec_rank = 0
+            elif op_name == "ekadesha_guna":
+                spec_rank = 1
+            elif op_name == "bijection_substitute":
+                spec_rank = 2
+            else:
+                spec_rank = 3
+
+            # Sūtra ordering (Vipratiṣedha P. 1.4.2 in Sapada vs Pūrvatrāsiddham P. 8.2.1 in Tripadi)
+            parts = r.sutra_id.split(".")
+            try:
+                num_id = float(parts[0]) * 10000 + float(parts[1]) * 100 + float(parts[2])
+            except Exception:
+                num_id = 999999.0
+
+            sutra_order = num_id if domain_rank == 1 else -num_id
+            return (domain_rank, spec_rank, sutra_order)
 
         return sorted(self._rules, key=_sort_key)
 
