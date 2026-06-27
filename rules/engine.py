@@ -32,41 +32,46 @@ class UniversalRuleEngine:
     def _get_sandhi_ordered_rules(self, scope: str = "external") -> List[PaniniRule]:
         def _sort_key(r: PaniniRule) -> Tuple[int, int, float]:
             spec = getattr(r, "spec", None)
-            domain = getattr(spec, "governance", {}).get("domain", "sapada") if spec else "sapada"
-            domain_rank = 1 if domain == "tripadi" or r.sutra_id.startswith(("8.2.", "8.3.", "8.4.")) else 0
-
-            # Specificity rank (Apavāda over Utsarga)
-            op = getattr(spec, "operation", None) if spec else None
-            op_name = getattr(op, "op_type", "") if op else ""
-            if op_name in {"ekadesha_savarna_dirgha", "ekadesha_vriddhi", "merge_savarna"}:
-                spec_rank = 0
-            elif op_name == "ekadesha_guna":
-                spec_rank = 1
-            elif op_name == "bijection_substitute":
-                spec_rank = 2
-            else:
-                spec_rank = 3
-
-            # Sūtra ordering
             parts = r.sutra_id.split(".")
             try:
                 num_id = float(parts[0]) * 10000 + float(parts[1]) * 100 + float(parts[2])
             except Exception:
                 num_id = 999999.0
 
+            # Tripādī domain (8.2.1 onwards = 80201) vs Sapādāsaptādhyāyī
+            domain = getattr(spec, "governance", {}).get("domain", "sapada") if spec else "sapada"
+            domain_rank = 1 if domain == "tripadi" or num_id >= 80200.0 else 0
+
+            # Structural Specificity count (Apavāda over Utsarga)
+            specificity = 0
+            if spec:
+                for ctx_obj in [spec.left_context, spec.right_context, spec.target_context]:
+                    if ctx_obj:
+                        if ctx_obj.exact_text:
+                            specificity += len(ctx_obj.exact_text) * 2
+                        if ctx_obj.features_required:
+                            specificity += len(ctx_obj.features_required)
+                        if ctx_obj.pratyahara:
+                            specificity += 1
+
+            # Sūtra ordering: Sapāda respects vipratiṣedhe paraṃ kāryam (1.4.2, later prevails -> -num_id)
+            # Tripādī executes sequentially (8.2.1 pūrvatrāsiddham -> num_id)
             sutra_order = num_id if domain_rank == 1 else -num_id
-            return (domain_rank, spec_rank, sutra_order)
+            return (domain_rank, -specificity, sutra_order)
 
-        filtered = self._rules
+        rules_pool = []
         if scope == "external":
-            filtered = [
-                r for r in self._rules
-                if r.sutra_id.startswith(("8.2.", "8.3.", "8.4.")) or (
-                    r.sutra_id.startswith("6.1.") and len(r.sutra_id.split(".")) == 3 and r.sutra_id.split(".")[2].isdigit() and int(r.sutra_id.split(".")[2]) >= 72
-                )
-            ]
-
-        return sorted(filtered, key=_sort_key)
+            for r in self._rules:
+                parts = getattr(r, "sutra_id", "").split(".")
+                try:
+                    a, p, s = int(parts[0]), int(parts[1]), int(parts[2])
+                    if (a == 6 and p == 1 and s <= 157) or (a == 8):
+                        rules_pool.append(r)
+                except Exception:
+                    pass
+        else:
+            rules_pool = self._rules
+        return sorted(rules_pool, key=_sort_key)
 
     def dispatch_forward(self, left: str, right: str, context: Dict[str, Any] = None) -> Tuple[str, str]:
         """Apply sequential forward sandhi/morphological transformation rules."""
@@ -95,11 +100,35 @@ class UniversalRuleEngine:
         return cur_l, cur_r
 
     def dispatch_revert(self, surface: str, context: Dict[str, Any] = None) -> List[Tuple[str, str]]:
-        """Compute all possible backward sandhi splits."""
+        """Compute all possible backward sandhi splits using recursive derivation graph traversal."""
         ctx = context or {}
         scope = ctx.get("scope", "external")
-        splits = []
         ordered = self._get_sandhi_ordered_rules(scope=scope)
-        for r in ordered:
-            splits.extend(r.revert(surface, ctx))
-        return list(set(splits))
+
+        visited = set()
+        results = set()
+
+        def _dfs(cur_surface: str, depth: int):
+            if depth > 3 or cur_surface in visited:
+                return
+            visited.add(cur_surface)
+            found_split = False
+            for r in ordered:
+                try:
+                    raw_splits = r.revert(cur_surface, ctx)
+                    for l, r_str in raw_splits:
+                        if (l, r_str) != (cur_surface, "") and (l, r_str) != ("", cur_surface):
+                            found_split = True
+                            results.add((l, r_str))
+                            # Recursive multi-step chain reversal on left piece
+                            if len(l) > 2 and depth < 2:
+                                for sub_l, sub_r in r.revert(l, ctx):
+                                    if (sub_l, sub_r) != (l, "") and sub_r:
+                                        results.add((sub_l, sub_r + r_str))
+                except Exception:
+                    pass
+            if not found_split and depth == 0:
+                results.add((cur_surface, ""))
+
+        _dfs(surface, 0)
+        return list(results)

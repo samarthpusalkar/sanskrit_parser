@@ -40,14 +40,6 @@ class TensorVocab:
         if cls._INIT_DONE:
             return
         cls._INIT_DONE = True
-        seed_roots = ["bhū", "gam", "ram", "īś"]
-        for idx, r in enumerate(seed_roots, start=1001):
-            cls.ROOTS[r] = idx
-            cls.REV_ROOTS[idx] = r
-        seed_stems = ["rāma", "īśa", "yadi", "api"]
-        for idx, s in enumerate(seed_stems, start=2001):
-            cls.STEMS[s] = idx
-            cls.REV_STEMS[idx] = s
 
         import sqlite3, os
         db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "sanskrit_master.db")
@@ -55,7 +47,7 @@ class TensorVocab:
             try:
                 conn = sqlite3.connect(db_path)
                 c = conn.cursor()
-                r_id = 1100
+                r_id = 1000
                 for row in c.execute("SELECT dhatu_iast, dhatu_slp1 FROM dhatus"):
                     for val in row:
                         if val and val not in cls.ROOTS:

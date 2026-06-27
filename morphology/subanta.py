@@ -22,11 +22,11 @@ class SubantaGenerator:
     _SUP_FALLBACK = {
         ("nominative", "singular"): "s", ("nominative", "dual"): "O", ("nominative", "plural"): "as",
         ("accusative", "singular"): "am", ("accusative", "dual"): "O", ("accusative", "plural"): "as",
-        ("instrumental", "singular"): "ena", ("instrumental", "dual"): "ByAm", ("instrumental", "plural"): "Bis",
+        ("instrumental", "singular"): "ina", ("instrumental", "dual"): "ByAm", ("instrumental", "plural"): "Bis",
         ("dative", "singular"): "Aya", ("dative", "dual"): "ByAm", ("dative", "plural"): "eByas",
         ("ablative", "singular"): "At", ("ablative", "dual"): "ByAm", ("ablative", "plural"): "eByas",
-        ("genitive", "singular"): "asya", ("genitive", "dual"): "ayoH", ("genitive", "plural"): "AnAm",
-        ("locative", "singular"): "e", ("locative", "dual"): "ayoH", ("locative", "plural"): "ezu",
+        ("genitive", "singular"): "sya", ("genitive", "dual"): "ayoH", ("genitive", "plural"): "AnAm",
+        ("locative", "singular"): "i", ("locative", "dual"): "ayoH", ("locative", "plural"): "ezu",
         ("vocative", "singular"): "", ("vocative", "dual"): "O", ("vocative", "plural"): "as"
     }
 
@@ -76,6 +76,4 @@ class SubantaGenerator:
             return stem_slp1
         if suffix in {"s", "H"}:
             return stem_slp1 + "H"
-        if suffix.startswith("e") or suffix.startswith("A") or suffix.startswith("E") or suffix.startswith("O"):
-            return stem_slp1[:-1] + suffix if stem_slp1.endswith("a") else stem_slp1 + suffix
         return SandhiEngine.join(stem_slp1, suffix)

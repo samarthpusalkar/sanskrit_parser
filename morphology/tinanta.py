@@ -84,15 +84,13 @@ class TinantaGenerator:
         if gana == 1:
             stem = SandhiEngine.join(root_slp1, "a")
         elif gana == 4:
-            stem = root_slp1 + "ya"
+            stem = SandhiEngine.join(root_slp1, "ya")
         elif gana == 6:
-            stem = root_slp1 + "a"
+            stem = SandhiEngine.join(root_slp1, "a")
         elif gana == 10:
-            stem = root_slp1 + "aya"
+            stem = SandhiEngine.join(root_slp1, "aya")
         else:
-            stem = root_slp1 + "a"
+            stem = SandhiEngine.join(root_slp1, "a")
 
         ending = cls._TIN_FALLBACK.get((purusa, vacana), "ti")
-        if ending.startswith("A"):
-            return stem[:-1] + ending if stem.endswith("a") else stem + ending
-        return stem + ending
+        return SandhiEngine.join(stem, ending)

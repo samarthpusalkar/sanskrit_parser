@@ -28,11 +28,6 @@ class TensorDetokenizer:
                 words.append(word)
                 continue
 
-            if t.root_id >= 10000:
-                word = TensorVocab.get_token(t.root_id)
-                words.append(word)
-                continue
-
             pos = TensorVocab.REV_POS.get(t.pos_id)
             if pos == "noun":
                 stem = TensorVocab.get_token(t.root_id) or "rāma"

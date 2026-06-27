@@ -16,6 +16,8 @@ class UniversalLemmatizer:
     LEMMA_MAP: Dict[str, str] = {}
 
     _KNOWN_CACHE: Set[str] = set()
+    _DHATU_SET: Set[str] = set()
+    _AVYAYA_SET: Set[str] = set()
     _CACHE_LOADED: bool = False
 
     @classmethod
@@ -30,21 +32,20 @@ class UniversalLemmatizer:
                 conn = sqlite3.connect(db_path)
                 c = conn.cursor()
                 for row in c.execute("SELECT dhatu_iast, dhatu_slp1 FROM dhatus"):
+                    if row[0]: cls._KNOWN_CACHE.add(row[0]); cls._DHATU_SET.add(row[0])
+                    if row[1]: cls._KNOWN_CACHE.add(row[1]); cls._DHATU_SET.add(row[1])
+                for row in c.execute("SELECT form_iast, form_slp1 FROM dhatu_forms"):
+                    if row[0]: cls._DHATU_SET.add(row[0])
+                    if row[1]: cls._DHATU_SET.add(row[1])
+                for row in c.execute("SELECT word_iast, word_slp1, linga FROM pratipadikas"):
                     if row[0]: cls._KNOWN_CACHE.add(row[0])
                     if row[1]: cls._KNOWN_CACHE.add(row[1])
-                for row in c.execute("SELECT word_iast, word_slp1 FROM pratipadikas"):
-                    if row[0]: cls._KNOWN_CACHE.add(row[0])
-                    if row[1]: cls._KNOWN_CACHE.add(row[1])
+                    if row[2] == 'A':
+                        if row[0]: cls._AVYAYA_SET.add(row[0])
+                        if row[1]: cls._AVYAYA_SET.add(row[1])
                 conn.close()
             except Exception:
                 pass
-        extra_stems = {
-            'tad', 'kim', 'asmad', 'yuṣmad', 'adas', 'vāk', 'pums', 'mātṛ',
-            'pañcan', 'mahat', 'dhāv', 'ac', 'namas', 'akṣan', 'karman', 'akarman',
-            'kṣetrajña', 'pitṛ', 'artha', 'vaṭī', 'bhrātṛ', 'gam', 'kṛ', 'car',
-            'śru', 'as', 'i', 'bhū', 'utpanna', 'upāśrita', 'nātha', 'aśva'
-        }
-        cls._KNOWN_CACHE.update(extra_stems)
 
     @classmethod
     def is_known(cls, word: str) -> bool:
@@ -160,7 +161,7 @@ class UniversalLemmatizer:
     @classmethod
     def lemmatize_with_features(cls, token: str) -> Dict[str, Any]:
         """Return canonical lemma along with extracted 11D morphological coordinate features."""
-        from typing import Any, Dict
+        cls._ensure_cache()
         lemma = cls.lemmatize(token)
         pos_id = 1  # Default noun
         affix_str = ""
@@ -171,9 +172,14 @@ class UniversalLemmatizer:
         case_id = 1
         gender_id = 1
 
-        if token in {"ac", "namas", "namaḥ", "yadi", "api", "ca", "eva", "śrutvā"}:
+        slp_tok = iast_to_slp1(token) if token else ""
+        slp_lem = iast_to_slp1(lemma) if lemma else ""
+
+        # Avyaya procedural check
+        if token in cls._AVYAYA_SET or slp_tok in cls._AVYAYA_SET or lemma in cls._AVYAYA_SET or slp_lem in cls._AVYAYA_SET or token.endswith(("tvā", "tum")):
             pos_id = 3  # Avyaya
             if token.endswith("tvā"): affix_str = "tvā"
+            elif token.endswith("tum"): affix_str = "tum"
             return {"lemma": lemma, "pos_id": pos_id, "upasarga_id": 0, "affix_str": affix_str, "lakara_id": 0, "voice_id": 0, "purusa_id": 0, "vacana_id": 0, "case_id": 0, "gender_id": 0}
 
         # Verbal checks
@@ -191,8 +197,7 @@ class UniversalLemmatizer:
         }
         for suff, (p, lak, pur, vac, voc, aff) in verb_forms.items():
             if token.endswith(suff) and len(token) > len(suff):
-                # Verify it lemmatized to a verb or verb root
-                if lemma in {'gam', 'kṛ', 'car', 'śru', 'as', 'i', 'bhū', 'dhāv'} or token in {'gacchati', 'gacchanti', 'karoti', 'carāmi', 'asti', 'asi', 'āsīt', 'astu', 'eti', 'bhavati'}:
+                if lemma in cls._DHATU_SET or slp_lem in cls._DHATU_SET or token in cls._DHATU_SET or slp_tok in cls._DHATU_SET:
                     return {"lemma": lemma, "pos_id": p, "upasarga_id": 0, "affix_str": aff, "lakara_id": lak, "voice_id": voc, "purusa_id": pur, "vacana_id": vac, "case_id": 0, "gender_id": 0}
 
         # Noun checks

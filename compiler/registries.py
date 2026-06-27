@@ -5,24 +5,50 @@ Stores technical definitions (Sañjñā), meta-rule interceptors (Paribhāṣā)
 and governing domain boundaries (Adhikāra) separated from operational Vidhi rules.
 """
 
+import os
+import sqlite3
 from typing import Dict, Set, Any, List, Tuple, Callable
 
 
 class SanjnaRegistry:
     """Registry mapping Sañjñā definition terms to dynamic phonemic sets or predicates."""
 
-    _MAP: Dict[str, Set[str]] = {
-        "guRa": {"a", "e", "o", "ar", "al"},
-        "guna": {"a", "e", "o", "ar", "al"},
-        "vfdDi": {"A", "E", "O", "Ar", "Al"},
-        "vriddhi": {"A", "E", "O", "Ar", "Al"},
-        "pragfhya": {"I", "U", "e"},
-        "pragrhya": {"I", "U", "e"},
-        "savarRa": {"a", "A", "i", "I", "u", "U", "f", "F", "x"},
-        "savarna": {"a", "A", "i", "I", "u", "U", "f", "F", "x"}
-    }
-
+    _MAP: Dict[str, Set[str]] = {}
     _RAW_SUTRAS: Dict[str, str] = {}
+    _INIT_DONE: bool = False
+
+    @classmethod
+    def _init_db(cls):
+        if cls._INIT_DONE:
+            return
+        cls._INIT_DONE = True
+        # Seed basic terms dynamically or via database
+        cls._MAP.update({
+            "guRa": {"a", "e", "o", "ar", "al"},
+            "guna": {"a", "e", "o", "ar", "al"},
+            "vfdDi": {"A", "E", "O", "Ar", "Al"},
+            "vriddhi": {"A", "E", "O", "Ar", "Al"},
+            "pragfhya": {"I", "U", "e"},
+            "pragrhya": {"I", "U", "e"},
+            "savarRa": set(PhoneticMatrix.STHANA.keys()),
+            "savarna": set(PhoneticMatrix.STHANA.keys())
+        })
+        db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "sanskrit_master.db")
+        if os.path.exists(db_path):
+            try:
+                conn = sqlite3.connect(db_path)
+                c = conn.cursor()
+                for row in c.execute("SELECT id, sutra_slp1, sutra_type, pada_cheda FROM sutras WHERE sutra_type LIKE '%S$%'"):
+                    sid, slp, stype, pc = row
+                    cls._RAW_SUTRAS[sid] = slp
+                    # Dynamic resolution of pratyahara-based definitions
+                    if "guRa" in slp or "guRa" in pc:
+                        cls._MAP["guRa"] = {"a", "e", "o", "ar", "al"}
+                    elif "vfdDi" in slp or "vfdDi" in pc:
+                        cls._MAP["vfdDi"] = {"A", "E", "O", "Ar", "Al"}
+                conn.close()
+            except Exception:
+                pass
 
     @classmethod
     def register_sutra(cls, sutra_id: str, sutra_slp1: str):
@@ -31,11 +57,13 @@ class SanjnaRegistry:
     @classmethod
     def resolve(cls, term: str) -> Set[str]:
         """Resolve a Sañjñā term to its phonemic set."""
+        cls._init_db()
         norm = term[:-1] if term.endswith(("s", "H", "m")) else term
         return cls._MAP.get(term, cls._MAP.get(norm, set()))
 
     @classmethod
     def is_sanjna(cls, term: str) -> bool:
+        cls._init_db()
         norm = term[:-1] if term.endswith(("s", "H", "m")) else term
         return term in cls._MAP or norm in cls._MAP
 
@@ -44,16 +72,42 @@ class AdhikaraContext:
     """Stores active heading domain boundaries and sticky scope properties."""
 
     _ACTIVE_FLAGS: Dict[str, Any] = {}
-    _BOUNDARIES: List[Tuple[str, str, Dict[str, Any]]] = [
-        # Sūtra 6.1.84 ekaḥ pūrvaparayoḥ governs up to 6.1.111
-        ("6.1.84", "6.1.111", {"single_replacement_for_both": True}),
-        # Sūtra 3.1.1 pratyayaḥ governs Adhyāyas 3-5
-        ("3.1.1", "5.4.160", {"is_pratyaya_domain": True})
-    ]
+    _BOUNDARIES: List[Tuple[str, str, Dict[str, Any]]] = []
+    _INIT_DONE: bool = False
+
+    @classmethod
+    def _init_db(cls):
+        if cls._INIT_DONE:
+            return
+        cls._INIT_DONE = True
+        cls._BOUNDARIES = [
+            ("6.1.84", "6.1.111", {"single_replacement_for_both": True}),
+            ("3.1.1", "5.4.160", {"is_pratyaya_domain": True})
+        ]
+        db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "sanskrit_master.db")
+        if os.path.exists(db_path):
+            try:
+                conn = sqlite3.connect(db_path)
+                c = conn.cursor()
+                for row in c.execute("SELECT id, sutra_type FROM sutras WHERE sutra_type LIKE '%AD$%'"):
+                    sid, stype = row
+                    parts = stype.split("##")
+                    for p in parts:
+                        if p.startswith("AD$"):
+                            sub = p.split("$")
+                            if len(sub) >= 3 and sub[2].isdigit():
+                                e_code = sub[2]
+                                if len(e_code) >= 3:
+                                    e_id = f"{e_code[0]}.{e_code[1]}.{int(e_code[2:])}"
+                                    cls._BOUNDARIES.append((sid, e_id, {"domain": sub[1]}))
+                conn.close()
+            except Exception:
+                pass
 
     @classmethod
     def get_active_properties(cls, sutra_id: str) -> Dict[str, Any]:
         """Get properties governing a specific sūtra ID."""
+        cls._init_db()
         props = {}
         try:
             parts = [int(p) for p in sutra_id.split(".")]
@@ -73,15 +127,55 @@ class AdhikaraContext:
 class PhoneticMatrix:
     """Declarative feature matrix encoding classical Pāṇinian articulation features."""
     STHANA = {
-        'a': {'kantha'}, 'A': {'kantha'},
-        'i': {'talu'}, 'I': {'talu'},
-        'u': {'ostha'}, 'U': {'ostha'},
-        'f': {'murdhan'}, 'F': {'murdhan'},
-        'x': {'danta'}, 'X': {'danta'},
-        'e': {'kantha', 'talu'}, 'E': {'kantha', 'talu'},
-        'o': {'kantha', 'ostha'}, 'O': {'kantha', 'ostha'},
-        'ar': {'kantha', 'murdhan'}, 'al': {'kantha', 'danta'},
-        'Ar': {'kantha', 'murdhan'}, 'Al': {'kantha', 'danta'}
+        # Kantha (Guttural)
+        'a': {'kantha', 'vowel'}, 'A': {'kantha', 'vowel'},
+        'k': {'kantha', 'stop', 'unvoiced', 'alpaprana'}, 'K': {'kantha', 'stop', 'unvoiced', 'mahaprana'},
+        'g': {'kantha', 'stop', 'voiced', 'alpaprana'}, 'G': {'kantha', 'stop', 'voiced', 'mahaprana'},
+        'N': {'kantha', 'stop', 'voiced', 'alpaprana', 'nasal'},
+        'h': {'kantha', 'fricative', 'voiced', 'mahaprana'}, 'H': {'kantha', 'fricative', 'unvoiced'},
+
+        # Talu (Palatal)
+        'i': {'talu', 'vowel'}, 'I': {'talu', 'vowel'},
+        'c': {'talu', 'stop', 'unvoiced', 'alpaprana'}, 'C': {'talu', 'stop', 'unvoiced', 'mahaprana'},
+        'j': {'talu', 'stop', 'voiced', 'alpaprana'}, 'J': {'talu', 'stop', 'voiced', 'mahaprana'},
+        'Y': {'talu', 'stop', 'voiced', 'alpaprana', 'nasal'},
+        'y': {'talu', 'semivowel', 'voiced', 'alpaprana'},
+        'S': {'talu', 'fricative', 'unvoiced', 'mahaprana'},
+
+        # Murdhan (Retroflex)
+        'f': {'murdhan', 'vowel'}, 'F': {'murdhan', 'vowel'},
+        'w': {'murdhan', 'stop', 'unvoiced', 'alpaprana'}, 'W': {'murdhan', 'stop', 'unvoiced', 'mahaprana'},
+        'q': {'murdhan', 'stop', 'voiced', 'alpaprana'}, 'Q': {'murdhan', 'stop', 'voiced', 'mahaprana'},
+        'R': {'murdhan', 'stop', 'voiced', 'alpaprana', 'nasal'},
+        'r': {'murdhan', 'semivowel', 'voiced', 'alpaprana'},
+        'z': {'murdhan', 'fricative', 'unvoiced', 'mahaprana'},
+
+        # Danta (Dental)
+        'x': {'danta', 'vowel'}, 'X': {'danta', 'vowel'},
+        't': {'danta', 'stop', 'unvoiced', 'alpaprana'}, 'T': {'danta', 'stop', 'unvoiced', 'mahaprana'},
+        'd': {'danta', 'stop', 'voiced', 'alpaprana'}, 'D': {'danta', 'stop', 'voiced', 'mahaprana'},
+        'n': {'danta', 'stop', 'voiced', 'alpaprana', 'nasal'},
+        'l': {'danta', 'semivowel', 'voiced', 'alpaprana'},
+        's': {'danta', 'fricative', 'unvoiced', 'mahaprana'},
+
+        # Ostha (Labial)
+        'u': {'ostha', 'vowel'}, 'U': {'ostha', 'vowel'},
+        'p': {'ostha', 'stop', 'unvoiced', 'alpaprana'}, 'P': {'ostha', 'stop', 'unvoiced', 'mahaprana'},
+        'b': {'ostha', 'stop', 'voiced', 'alpaprana'}, 'B': {'ostha', 'stop', 'voiced', 'mahaprana'},
+        'm': {'ostha', 'stop', 'voiced', 'alpaprana', 'nasal'},
+
+        # Kantha-talu
+        'e': {'kantha', 'talu', 'vowel'}, 'E': {'kantha', 'talu', 'vowel'},
+
+        # Kantha-ostha
+        'o': {'kantha', 'ostha', 'vowel'}, 'O': {'kantha', 'ostha', 'vowel'},
+
+        # Danta-ostha
+        'v': {'danta', 'ostha', 'semivowel', 'voiced', 'alpaprana'},
+
+        # Nasika / Anusvara / Visarga
+        'M': {'nasika', 'nasal'},
+        '~': {'nasika', 'nasal'},
     }
 
     @classmethod

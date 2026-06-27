@@ -37,9 +37,16 @@ class CompiledVidhiRule(PaniniRule):
             return any(l_char in g and r_char in g for g in savarna_groups)
 
         if op.op_type == "ekadesha_vriddhi":
+            if self.sutra_id == "6.1.91":
+                upasargas = {'pra', 'para', 'apa', 'sam', 'anu', 'ava', 'nis', 'nir', 'dus', 'dur', 'vi', 'A', 'ni', 'aDi', 'api', 'ati', 'su', 'ut', 'aBi', 'prati', 'pari', 'upa'}
+                return left in upasargas and r_char in {'f', 'F'}
+            if self.sutra_id != "6.1.88":
+                return False
             return l_char in {'a', 'A'} and PratyaharaResolver.contains("eC", r_char)
 
         if op.op_type == "ekadesha_guna":
+            if self.sutra_id != "6.1.87":
+                return False
             if l_char not in {'a', 'A'} or not PratyaharaResolver.contains("aC", r_char):
                 return False
             # Blocked if savarna or eC
@@ -260,7 +267,7 @@ class MasterCompilerPipeline:
         rows = cur.execute("SELECT id, sutra_slp1, sutra_type, pada_cheda FROM sutras WHERE pada_cheda != ''").fetchall()
         conn.close()
 
-        from compiler.registries import SanjnaRegistry, ParibhasaRegistry
+        from compiler.registries import SanjnaRegistry, ParibhasaRegistry, AdhikaraContext
         from compiler.anuvritti import AnuvrittiEngine
         from compiler.exceptions import PaninianCompilationError
 
@@ -275,7 +282,7 @@ class MasterCompilerPipeline:
             # Algorithmic classification based on Vibhakti parsing and markers
             if stype.startswith("P$") or stype.startswith("AT$") or stype.startswith("AD$") or any(
                 marker in slp for marker in ("sTAne", "prasaNge", "vat", "atiDeSa")
-            ) or any(t.slp1 == "na" for t in tokens):
+            ):
                 ParibhasaRegistry.register_sutra(sid, slp)
                 continue
             elif stype.startswith("S$") or "saMjYA" in pc or "saMjYA" in slp or (
@@ -285,12 +292,9 @@ class MasterCompilerPipeline:
                 continue
 
             # Skip Svara (accentuation) adhikāra rules so they do not distort letter Sandhi
-            parts = sid.split(".")
-            if len(parts) == 3 and parts[0] == "6" and parts[1] == "1" and int(parts[2]) >= 158:
-                continue
-            if len(parts) == 3 and parts[0] == "6" and parts[1] == "2":
-                continue
-            if any(x in slp for x in ("udAtta", "anudAtta", "svarita")):
+            props = AdhikaraContext.get_active_properties(sid)
+            dom_str = props.get("domain", "")
+            if "स्वर" in dom_str or "svara" in dom_str.lower() or any(x in slp for x in ("udAtta", "anudAtta", "svarita")):
                 continue
 
             try:

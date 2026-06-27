@@ -44,40 +44,6 @@ class SutraAstBuilder:
     """Converts a resolved list of PadaTokens into a Pāṇinian RuleSpec AST."""
 
     @classmethod
-    def _inherit_anuvritti_substitute(cls, sutra_id: str) -> str:
-        """Lightweight lookback window querying SQLite for inherited replacements."""
-        import sqlite3, os
-        db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "sanskrit_master.db")
-        if not os.path.exists(db_path):
-            return ""
-        try:
-            conn = sqlite3.connect(db_path)
-            c = conn.cursor()
-            parts = sutra_id.split(".")
-            if len(parts) != 3:
-                return ""
-            ady, pad, num = int(parts[0]), int(parts[1]), int(parts[2])
-            for prev_num in range(num - 1, max(0, num - 6), -1):
-                prev_id = f"{ady}.{pad}.{prev_num}"
-                row = c.execute("SELECT pada_cheda FROM sutras WHERE id=?", (prev_id,)).fetchone()
-                if row and row[0]:
-                    from compiler.pada_cheda import PadaChedaParser
-                    prev_tokens = PadaChedaParser.parse(row[0])
-                    for pt in prev_tokens:
-                        if pt.is_substitute:
-                            norm = pt.slp1[:-1] if pt.slp1.endswith(("s", "H")) else pt.slp1
-                            if norm in PANINIAN_META_TERMS or pt.slp1 in PANINIAN_META_TERMS:
-                                conn.close()
-                                return PANINIAN_META_TERMS.get(pt.slp1, PANINIAN_META_TERMS.get(norm, ""))
-                            if pt.slp1 in {"ut", "u"}:
-                                conn.close()
-                                return "u"
-            conn.close()
-        except Exception:
-            pass
-        return ""
-
-    @classmethod
     def _resolve_pratyahara(cls, slp: str) -> Optional[str]:
         if slp in PRATYAHARA_STEMS:
             return PRATYAHARA_STEMS[slp]
@@ -107,6 +73,10 @@ class SutraAstBuilder:
         has_target = False
         props = AdhikaraContext.get_active_properties(sutra_id)
         is_ekadesha = props.get("single_replacement_for_both", False)
+
+        if any(t.slp1 == "na" for t in tokens):
+            op_type = "prohibit"
+            sub_val = "prohibit"
 
         for t in tokens:
             slp = t.slp1
