@@ -111,14 +111,32 @@ class AdhikaraContext:
         props = {}
         try:
             parts = [int(p) for p in sutra_id.split(".")]
-            val = parts[0] * 10000 + parts[1] * 100 + parts[2]
+            val = parts[0] * 100000 + parts[1] * 1000 + parts[2]
             for start_id, end_id, p_map in cls._BOUNDARIES:
                 s_parts = [int(p) for p in start_id.split(".")]
                 e_parts = [int(p) for p in end_id.split(".")]
-                s_val = s_parts[0] * 10000 + s_parts[1] * 100 + s_parts[2]
-                e_val = e_parts[0] * 10000 + e_parts[1] * 100 + e_parts[2]
+                s_val = s_parts[0] * 100000 + s_parts[1] * 1000 + s_parts[2]
+                e_val = e_parts[0] * 100000 + e_parts[1] * 1000 + e_parts[2]
                 if s_val <= val <= e_val:
                     props.update(p_map)
+            raw_dom = props.get("domain", "")
+            if any(k in raw_dom for k in ("संहिता", "samhita", "एकः पूर्वपरयोः")):
+                props["semantic_domain"] = "samhita"
+            elif any(k in raw_dom for k in ("पूर्वत्रासिद्धम्", "tripadi")):
+                props["semantic_domain"] = "tripadi"
+            elif any(k in raw_dom for k in ("अङ्गस्य", "angasya", "भस्य")):
+                props["semantic_domain"] = "angasya"
+            elif any(k in raw_dom for k in ("समास", "aluk")):
+                props["semantic_domain"] = "aluk"
+            else:
+                if (parts[0] == 6 and parts[1] == 1 and parts[2] <= 157) or parts[0] == 8:
+                    props["semantic_domain"] = "samhita"
+                elif parts[0] == 6 and parts[1] == 3:
+                    props["semantic_domain"] = "aluk"
+                elif parts[0] in {6, 7}:
+                    props["semantic_domain"] = "angasya"
+                else:
+                    props["semantic_domain"] = "general"
         except Exception:
             pass
         return props

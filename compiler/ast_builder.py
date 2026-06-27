@@ -166,12 +166,20 @@ class SutraAstBuilder:
                 op_type = inh_op.op_type
                 sub_val = inh_op.substitute
 
+        inh_slots = anuvritti.get_inherited_slots(sutra_id)
         if not has_target:
-            inh_slots = anuvritti.get_inherited_slots(sutra_id)
             inh_tgt = inh_slots.get("target")
             if inh_tgt:
                 target_cond = inh_tgt
                 has_target = True
+        if not left_cond:
+            inh_l = inh_slots.get("left_context")
+            if inh_l:
+                left_cond = inh_l
+        if not right_cond:
+            inh_r = inh_slots.get("right_context")
+            if inh_r:
+                right_cond = inh_r
 
         if not has_target and not left_cond and not right_cond:
             raise PaninianCompilationError(

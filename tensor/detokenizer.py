@@ -54,14 +54,16 @@ class TensorDetokenizer:
 
         norm_words = []
         for i, w in enumerate(words):
-            if w == "aśvā" and i + 1 < len(words) and words[i+1][0] in "aAiIuUeEoO":
-                norm_words.append("aśvāḥ")
-            elif w == "namas" and i + 1 < len(words) and words[i+1][0] in "kKgGcP":
-                norm_words.append("namaḥ")
-            elif w == "ahaṃ" and i == len(words) - 1:
-                norm_words.append("aham")
-            else:
-                norm_words.append(w)
+            # General algorithmic normalization at Pada boundaries
+            if w.endswith("ñ") or w.endswith("ṅ"):
+                cand = w[:-1] + "m"
+                if UniversalLemmatizer.is_known(cand) or UniversalLemmatizer.lemmatize(cand) != cand:
+                    w = cand
+            elif w.endswith("ṃ") and i == len(words) - 1:
+                cand = w[:-1] + "m"
+                if UniversalLemmatizer.is_known(cand) or UniversalLemmatizer.lemmatize(cand) != cand:
+                    w = cand
+            norm_words.append(w)
 
         return norm_words
 

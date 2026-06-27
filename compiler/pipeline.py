@@ -145,6 +145,7 @@ class CompiledVidhiRule(PaniniRule):
                     for a in allowed:
                         if left.endswith(a):
                             return left[:-len(a)] + op.substitute, right
+                    return left, right
                 return left[:-1] + op.substitute, right
 
         return left, right
@@ -264,7 +265,7 @@ class MasterCompilerPipeline:
 
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
-        rows = cur.execute("SELECT id, sutra_slp1, sutra_type, pada_cheda FROM sutras WHERE pada_cheda != ''").fetchall()
+        rows = cur.execute("SELECT id, sutra_slp1, sutra_type, pada_cheda FROM sutras WHERE pada_cheda != '' ORDER BY id ASC").fetchall()
         conn.close()
 
         from compiler.registries import SanjnaRegistry, ParibhasaRegistry, AdhikaraContext
@@ -300,6 +301,7 @@ class MasterCompilerPipeline:
             try:
                 spec = SutraAstBuilder.build(sid, slp, tokens)
                 rule = CompiledVidhiRule(spec)
+                rule.domain = props.get("semantic_domain", "samhita")
                 compiled.append(rule)
             except PaninianCompilationError:
                 # Rule lacks operational transformation context; register as non-operational

@@ -62,13 +62,9 @@ class UniversalRuleEngine:
         rules_pool = []
         if scope == "external":
             for r in self._rules:
-                parts = getattr(r, "sutra_id", "").split(".")
-                try:
-                    a, p, s = int(parts[0]), int(parts[1]), int(parts[2])
-                    if (a == 6 and p == 1 and s <= 157) or (a == 8):
-                        rules_pool.append(r)
-                except Exception:
-                    pass
+                dom = getattr(r, "domain", "")
+                if dom in {"samhita", "tripadi"}:
+                    rules_pool.append(r)
         else:
             rules_pool = self._rules
         return sorted(rules_pool, key=_sort_key)

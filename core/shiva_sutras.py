@@ -26,6 +26,14 @@ SHIVA_SUTRAS: List[Tuple[Tuple[str, ...], str]] = [
 ]
 
 
+CANONICAL_PRATYAHARAS: FrozenSet[str] = frozenset({
+    'aR', 'iR', 'uR', 'yaR', 'ak', 'ik', 'uk', 'fk', 'eN', 'oN', 'ac', 'ic', 'ec', 'Ec', 'aC', 'iC', 'eC',
+    'aw', 'iw', 'am', 'yam', 'Jam', 'Jm', 'ym', 'JaY', 'BaY', 'Baz', 'Jaz', 'jaS', 'baS', 'aS', 'haS',
+    'vaS', 'JaS', 'Cav', 'yay', 'may', 'Jay', 'Kay', 'cay', 'yar', 'Jar', 'Kar', 'car', 'Sar',
+    'al', 'hal', 'val', 'ral', 'Jal', 'Sal', 'ra', 'yam'
+})
+
+
 class PratyaharaResolver:
     """Dynamic generator and cache for Pāṇinian Pratyāhāras."""
 
@@ -35,17 +43,11 @@ class PratyaharaResolver:
     def resolve(cls, name: str, long_an: bool = False) -> FrozenSet[str]:
         """
         Resolve a Pratyāhāra string (e.g. 'aC', 'iK', 'haL') to a frozenset of phonemes.
-
-        Args:
-            name: 2 or 3 character string where first char(s) is starting phoneme
-                  and last char is the IT marker.
-            long_an: If True and name == 'aR', resolves using Sūtra 6 instead of Sūtra 1.
         """
         cache_key = (name, long_an)
         if cache_key in cls._cache:
             return cls._cache[cache_key]
 
-        # Special Vārttika pratyāhāra 'ra' generating {r, l}
         if name == 'ra':
             res = frozenset({'r', 'l'})
             cls._cache[cache_key] = res
@@ -53,6 +55,12 @@ class PratyaharaResolver:
 
         if len(name) < 2:
             raise ValueError(f"Invalid pratyāhāra name: {name}")
+
+        # Case-insensitive check against canonical pratyāhāras
+        norm = name[:-1] + name[-1].lower()
+        norm_up = name[:-1] + name[-1].upper()
+        if norm not in CANONICAL_PRATYAHARAS and norm_up not in CANONICAL_PRATYAHARAS and name not in CANONICAL_PRATYAHARAS:
+            raise ValueError(f"Non-canonical pratyāhāra rejected: {name}")
 
         start_char = name[:-1]
         it_marker = name[-1]

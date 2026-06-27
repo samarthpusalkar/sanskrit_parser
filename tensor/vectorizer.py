@@ -74,10 +74,12 @@ class TensorVectorizer:
                             valid_candidates.append(candidate)
 
         if valid_candidates:
-            def score_cand(cand: List[str]) -> Tuple[int, int, List[int]]:
+            def score_cand(cand: List[str]) -> Tuple[int, int, int, int]:
+                canon_chars = sum(len(w) for w in cand if UniversalLemmatizer._is_canonical_lemma(UniversalLemmatizer.lemmatize(w)))
+                neg_tokens = -len(cand)
+                min_len = min(len(w) for w in cand) if cand else 0
                 canon_count = sum(1 for w in cand if UniversalLemmatizer._is_canonical_lemma(UniversalLemmatizer.lemmatize(w)))
-                char_score = [-ord(ch) for w in cand for ch in w]
-                return (canon_count, -len(cand), char_score)
+                return (canon_chars, neg_tokens, min_len, canon_count)
             valid_candidates.sort(key=score_cand, reverse=True)
             return valid_candidates[0]
 

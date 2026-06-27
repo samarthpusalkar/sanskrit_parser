@@ -29,6 +29,7 @@ class AnuvrittiEngine:
         self.active_right_context: Optional[Any] = None
         self.active_operation: Optional[Any] = None
         self.current_sutra_id: str = ""
+        self.active_domain: str = ""
 
     def step(self, sutra_id: str, target: Any, left: Any, right: Any, op: Any):
         """Update active Anuvṛtti state upon ingesting a sūtra."""
@@ -36,6 +37,13 @@ class AnuvrittiEngine:
 
         # Check domain boundaries or Adhikāra resets
         props = AdhikaraContext.get_active_properties(sutra_id)
+        new_domain = props.get("domain", "")
+        if self.active_domain and new_domain != self.active_domain:
+            self.active_target = None
+            self.active_left_context = None
+            self.active_right_context = None
+            self.active_operation = None
+        self.active_domain = new_domain
 
         # Update slots if explicitly present in the new sūtra (blocking rule)
         if target is not None:
@@ -44,7 +52,7 @@ class AnuvrittiEngine:
             self.active_left_context = left
         if right is not None:
             self.active_right_context = right
-        if op is not None and getattr(op, "op_type", "") != "substitute" or getattr(op, "substitute", "") != "":
+        if op is not None and (getattr(op, "op_type", "") != "substitute" or getattr(op, "substitute", "") != ""):
             self.active_operation = op
 
     def get_inherited_slots(self, sutra_id: str) -> Dict[str, Any]:
