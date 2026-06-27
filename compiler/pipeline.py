@@ -75,7 +75,13 @@ def _expand_literal_pattern(pattern: str) -> List[str]:
 
 def _condition_from_config(pattern: str, match_pos: str) -> "ConditionSpec":
     from rule_engine.dsl import ConditionSpec
+    if pattern.startswith("PRAT:"):
+        return ConditionSpec(pratyahara=pattern.removeprefix("PRAT:"), match_pos=match_pos)
     return ConditionSpec(exact_text=pattern, match_pos=match_pos)
+
+
+def _is_config_source(spec: RuleSpec) -> bool:
+    return spec.governance.get("source") in {"rule_configs", "seed", "bootstrap_ast"}
 
 
 class CompiledVidhiRule(PaniniRule):
@@ -98,7 +104,7 @@ class CompiledVidhiRule(PaniniRule):
             "natva", "right_substitute", "external_block",
         }
 
-        if op.op_type in data_ops and self.spec.governance.get("source") == "rule_configs":
+        if op.op_type in data_ops and _is_config_source(self.spec):
             if not self._is_config_target_match(left, l_char):
                 return False
             if not self._is_valid_right_context(right):
@@ -210,7 +216,7 @@ class CompiledVidhiRule(PaniniRule):
                 return left[:-1] + 'O', right[1:]
             return left[:-1] + 'E', right[1:] if right else right
 
-        elif op.op_type == "substitute" and self.spec.governance.get("source") == "rule_configs":
+        elif op.op_type == "substitute" and _is_config_source(self.spec):
             return left[:-1] + (op.substitute or ""), right
 
         elif op.op_type in {"bijection_substitute", "substitute", "exact_substitute"}:
@@ -295,7 +301,7 @@ class CompiledVidhiRule(PaniniRule):
         if not combined_surface:
             return splits
 
-        if self.spec.governance.get("source") == "rule_configs":
+        if _is_config_source(self.spec):
             if op.op_type == "merge" and op.substitute:
                 left_targets = _expand_literal_pattern(self.spec.target_context.exact_text or "")
                 right_targets = _expand_literal_pattern(self.spec.right_context.exact_text if self.spec.right_context else "")
@@ -420,20 +426,36 @@ class RuleConfigCompiler:
     def compile_all(cls, cur: sqlite3.Cursor) -> List[PaniniRule]:
         from rule_engine.dsl import OperationSpec
 
+        columns = {row[1] for row in cur.execute("PRAGMA table_info(rule_configs)").fetchall()}
+        has_extended_schema = {"target_context", "domain", "source"}.issubset(columns)
+        if has_extended_schema:
+            query = """
+                SELECT rc.sutra_id, COALESCE(rc.name, s.sutra_slp1),
+                       COALESCE(NULLIF(rc.target_context, ''), rc.left_context),
+                       CASE WHEN NULLIF(rc.target_context, '') IS NULL THEN NULL ELSE rc.left_context END,
+                       rc.right_context, rc.operation, rc.replacement, rc.domain, rc.source
+                FROM rule_configs rc
+                LEFT JOIN sutras s ON s.id = rc.sutra_id
+                ORDER BY rc.sutra_id ASC, rc.id ASC
+            """
+        else:
+            query = """
+                SELECT rc.sutra_id, COALESCE(rc.name, s.sutra_slp1),
+                       rc.left_context, NULL, rc.right_context, rc.operation, rc.replacement, NULL, NULL
+                FROM rule_configs rc
+                LEFT JOIN sutras s ON s.id = rc.sutra_id
+                ORDER BY rc.sutra_id ASC, rc.id ASC
+            """
+
         rows = cur.execute(
-            """
-            SELECT rc.sutra_id, COALESCE(rc.name, s.sutra_slp1), rc.left_context,
-                   rc.right_context, rc.operation, rc.replacement
-            FROM rule_configs rc
-            LEFT JOIN sutras s ON s.id = rc.sutra_id
-            ORDER BY rc.sutra_id ASC, rc.id ASC
-            """
+            query
         ).fetchall()
 
         compiled: List[PaniniRule] = []
-        for sid, name, left_context, right_context, operation, replacement in rows:
-            domain = "tripadi" if cls._is_tripadi(sid) else "sapada"
-            target = _condition_from_config(left_context or "", "end")
+        for sid, name, target_context, left_context, right_context, operation, replacement, row_domain, row_source in rows:
+            domain = row_domain or ("tripadi" if cls._is_tripadi(sid) else "sapada")
+            target = _condition_from_config(target_context or "", "end")
+            left = _condition_from_config(left_context or "", "end") if left_context else None
             right = _condition_from_config(right_context or "", "start") if right_context else None
             spec = RuleSpec(
                 id=sid,
@@ -441,9 +463,10 @@ class RuleConfigCompiler:
                 rule_type="vidhi_sandhi",
                 priority=1000,
                 target_context=target,
+                left_context=left,
                 right_context=right,
                 operation=OperationSpec(op_type=operation, substitute=replacement),
-                governance={"domain": domain, "source": "rule_configs"},
+                governance={"domain": domain, "source": row_source or "rule_configs"},
             )
             rule = CompiledVidhiRule(spec)
             rule.domain = "samhita"

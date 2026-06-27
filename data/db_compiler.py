@@ -81,10 +81,13 @@ def compile_database(db_path="data/sanskrit_master.db", data_dir="data/ashtadhya
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             sutra_id TEXT,
             name TEXT,
+            target_context TEXT,
             left_context TEXT,
             right_context TEXT,
             operation TEXT,
             replacement TEXT,
+            domain TEXT,
+            source TEXT,
             FOREIGN KEY (sutra_id) REFERENCES sutras(id)
         );
     """)
@@ -229,7 +232,7 @@ def compile_database(db_path="data/sanskrit_master.db", data_dir="data/ashtadhya
         ("8.3.34", "visarga_retroflex", "H", "w|W", "substitute", "z"),
         ("8.3.34", "visarga_dental", "H", "t|T", "substitute", "s")
     ]
-    cur.executemany("INSERT INTO rule_configs (sutra_id, name, left_context, right_context, operation, replacement) VALUES (?,?,?,?,?,?)", rule_configs)
+    cur.executemany("INSERT INTO rule_configs (sutra_id, name, target_context, right_context, operation, replacement, source) VALUES (?,?,?,?,?,?, 'seed')", rule_configs)
     print(f"[+] Inserted {len(rule_configs)} Rule Configurations.")
 
     conn.commit()
