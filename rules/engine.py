@@ -56,6 +56,8 @@ class UniversalRuleEngine:
             if spec:
                 for ctx_obj in [spec.left_context, spec.right_context, spec.target_context]:
                     if ctx_obj:
+                        if getattr(ctx_obj, "tokens_required", None):
+                            specificity += sum(len(t) * 3 for t in ctx_obj.tokens_required)
                         if ctx_obj.exact_text:
                             specificity += len(ctx_obj.exact_text) * 2
                         if ctx_obj.features_required:

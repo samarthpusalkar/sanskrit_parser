@@ -94,11 +94,11 @@ class CompiledVidhiRule(PaniniRule):
             return False
         if not self._is_config_target_match(left, l_char):
             return False
-        if self.spec.left_context and not self._is_config_condition_match(self.spec.left_context, left, left[-1]):
+        if self.spec.left_context and not self._is_config_condition_match(self.spec.left_context, left, left[:-1][-1] if len(left) > 1 else left[-1]):
             return False
         if not self._is_valid_right_context(right):
             return False
-        if op.op_type == "ro_ri_dirgha":
+        if op.op_type in {"ro_ri_dirgha", "dhra_lopa_dirgha"}:
             return len(left) >= 2 and left[-2] in SHORT_VOWELS
         if op.op_type in {"external_block", "non_operational"}:
             return False
@@ -113,13 +113,17 @@ class CompiledVidhiRule(PaniniRule):
             return True
         if not text:
             return False
-        char_to_check = text[0] if cond.match_pos == "start" else boundary_char
         if getattr(cond, "tokens_required", None):
             return text in cond.tokens_required
+        ctx_str = text[:-1] if len(text) > 1 and boundary_char != text[-1] else text
+        char_to_check = ctx_str[0] if cond.match_pos == "start" else boundary_char
         if cond.pratyahara:
             return PratyaharaResolver.contains(cond.pratyahara, char_to_check)
         if cond.exact_text:
-            if any(text.endswith(p.strip()) for p in cond.exact_text.split("|") if p.strip()):
+            if cond.exact_text.startswith("NOT:"):
+                disallowed = {p.strip() for p in cond.exact_text[4:].split("|") if p.strip()}
+                return char_to_check not in disallowed and not any(ctx_str.endswith(d) for d in disallowed)
+            if any(ctx_str.endswith(p.strip()) for p in cond.exact_text.split("|") if p.strip()):
                 return True
             return _symbolic_match(cond.exact_text, char_to_check)
         return True
@@ -134,6 +138,9 @@ class CompiledVidhiRule(PaniniRule):
         if rgt.pratyahara:
             return PratyaharaResolver.contains(rgt.pratyahara, r_char)
         elif rgt.exact_text:
+            if rgt.exact_text.startswith("NOT:"):
+                disallowed = {p.strip() for p in rgt.exact_text[4:].split("|") if p.strip()}
+                return r_char not in disallowed and not any(right_str.startswith(d) for d in disallowed)
             if _symbolic_match(rgt.exact_text, r_char):
                 return True
             if any(right_str.startswith(p.strip()) for p in rgt.exact_text.split("|") if p.strip()):
@@ -196,8 +203,8 @@ class CompiledVidhiRule(PaniniRule):
                         lookup = fwd_map.get(l_char) or fwd_map.get(savarna.get(l_char, ''))
                     else:
                         from core.phonology import get_sthana
-                        search_char = savarna.get(l_char, l_char)
-                        if search_char in t_list:
+                        search_char = right[0] if l_char == 'M' and right else savarna.get(l_char, l_char)
+                        if search_char in t_list or l_char == 'M':
                             target_sthana = get_sthana(search_char)
                             for cand in s_list:
                                 if get_sthana(cand) == target_sthana:
@@ -233,7 +240,7 @@ class CompiledVidhiRule(PaniniRule):
         elif op.op_type == "visarga_utva":
             return left[:-2] + 'o', right
 
-        elif op.op_type == "ro_ri_dirgha":
+        elif op.op_type in {"ro_ri_dirgha", "dhra_lopa_dirgha"}:
             from core.phonology import SAVARNA_LONG
             return left[:-2] + SAVARNA_LONG.get(left[-2], left[-2]), right
 
@@ -242,6 +249,9 @@ class CompiledVidhiRule(PaniniRule):
 
         elif op.op_type == "right_substitute":
             return left, (op.substitute or "") + right[1:]
+
+        elif op.op_type == "right_prepend":
+            return left, (op.substitute or "") + right
 
         elif op.op_type == "bijection_right_substitute":
             t_cond = self.spec.target_context
