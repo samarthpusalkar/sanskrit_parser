@@ -38,12 +38,12 @@ class TensorVocab:
     @classmethod
     def is_plausible_token(cls, token: str) -> bool:
         """Check if a candidate string is a plausible Sanskrit vocabulary token."""
-        if not token or (len(token) == 1 and token not in {"i"}):
+        if not token or (len(token) == 1 and token not in {"i", "a", "u"}):
             return False
-        lemma = UniversalLemmatizer.lemmatize(token)
-        if lemma in UniversalLemmatizer.KNOWN_LEMMAS:
+        if UniversalLemmatizer.is_known(token):
             return True
-        if token in UniversalLemmatizer.LEMMA_MAP:
+        lemma = UniversalLemmatizer.lemmatize(token)
+        if UniversalLemmatizer.is_known(lemma):
             return True
         if lemma in cls.ROOTS or lemma in cls.STEMS:
             return True

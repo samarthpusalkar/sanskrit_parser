@@ -1,10 +1,11 @@
 """
-Lexical Database Interfaces.
+Lexical Database Interfaces backed by Master SQLite Database.
 
-Provides query methods for verb roots (Dhātus) and nominal stems (Prātipadikas).
+Provides O(1) indexed SQL query methods for ~2,000 verb roots (Dhātus)
+and ~40,000 nominal stems (Prātipadikas).
 """
 
-import json
+import sqlite3
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
@@ -13,52 +14,77 @@ from typing import Optional, List, Dict, Any
 @dataclass
 class DhatuEntry:
     id: int
-    root: str
-    raw_upadesha: str
+    base_index: str
+    dhatu_dev: str
+    dhatu_slp1: str
+    dhatu_iast: str
     gana: int
     pada: str
-    set_status: str
-    gloss: str
+    settva: str
+    karma: str
+    artha_eng: str
+    tags: str
 
 
 @dataclass
 class StemEntry:
-    stem: str
-    gender: str
-    antya: str
+    id: int
+    word_dev: str
+    word_slp1: str
+    word_iast: str
+    linga: str
+    artha_eng: str
+    forms_slp1: str
 
 
 class Lexicon:
-    _dhatus: Dict[str, DhatuEntry] = {}
-    _stems: Dict[str, StemEntry] = {}
-    _loaded: bool = False
+    _db_path = Path(__file__).parent / "sanskrit_master.db"
+    _conn: Optional[sqlite3.Connection] = None
 
     @classmethod
-    def load(cls, fixture_path: Optional[Path] = None) -> None:
-        if cls._loaded:
-            return
-        if fixture_path is None:
-            fixture_path = Path(__file__).parent / "dhatupatha.json"
-
-        with open(fixture_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        for item in data.get("roots", []):
-            entry = DhatuEntry(**item)
-            cls._dhatus[entry.root] = entry
-
-        for item in data.get("nominal_stems", []):
-            entry = StemEntry(**item)
-            cls._stems[entry.stem] = entry
-
-        cls._loaded = True
+    def _get_conn(cls) -> sqlite3.Connection:
+        if cls._conn is None:
+            if not cls._db_path.exists():
+                from data.db_compiler import compile_database
+                compile_database(str(cls._db_path))
+            cls._conn = sqlite3.connect(str(cls._db_path))
+        return cls._conn
 
     @classmethod
     def get_dhatu(cls, root_slp1: str) -> Optional[DhatuEntry]:
-        cls.load()
-        return cls._dhatus.get(root_slp1)
+        conn = cls._get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM dhatus WHERE dhatu_slp1 = ? LIMIT 1", (root_slp1,))
+        row = cur.fetchone()
+        if row:
+            return DhatuEntry(*row)
+        return None
 
     @classmethod
     def get_stem(cls, stem_slp1: str) -> Optional[StemEntry]:
-        cls.load()
-        return cls._stems.get(stem_slp1)
+        conn = cls._get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM pratipadikas WHERE word_slp1 = ? LIMIT 1", (stem_slp1,))
+        row = cur.fetchone()
+        if row:
+            return StemEntry(*row)
+        return None
+
+    @classmethod
+    def is_valid_stem(cls, stem_slp1: str) -> bool:
+        if not stem_slp1:
+            return False
+        conn = cls._get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM pratipadikas WHERE word_slp1 = ? OR word_iast = ? LIMIT 1", (stem_slp1, stem_slp1))
+        if cur.fetchone():
+            return True
+        cur.execute("SELECT 1 FROM dhatus WHERE dhatu_slp1 = ? OR dhatu_iast = ? LIMIT 1", (stem_slp1, stem_slp1))
+        if cur.fetchone():
+            return True
+        cur.execute("SELECT 1 FROM dhatu_forms WHERE form_slp1 = ? OR form_iast = ? LIMIT 1", (stem_slp1, stem_slp1))
+        return bool(cur.fetchone())
+
+    @classmethod
+    def load(cls, fixture_path: Optional[Path] = None) -> None:
+        cls._get_conn()

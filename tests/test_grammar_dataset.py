@@ -431,7 +431,9 @@ def test_evaluator_ground_truth_matching():
 
 def test_evaluator_csv_and_log_generation(tmp_path):
     """Verify that final CSV and detailed diagnostic logs are generated on disk."""
-    evaluator = GrammarDatasetEvaluator("tests/basic_grammar_testing.json")
+    mock_p = tmp_path / "mock.json"
+    mock_p.write_text(json.dumps([{"id": "TC_1", "input_string": "dharma", "expected_tokens": ["dharma"]}]), encoding="utf-8")
+    evaluator = GrammarDatasetEvaluator(mock_p)
     report = evaluator.evaluate_suite()
 
     csv_p = tmp_path / "metrics.csv"
