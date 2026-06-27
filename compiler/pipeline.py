@@ -17,25 +17,6 @@ from core.shiva_sutras import PratyaharaResolver
 from core.phonology import SHORT_VOWELS, VOWELS, CONSONANTS
 
 
-VOICED_EQUIVALENTS = {
-    'k': 'g', 'K': 'G', 'c': 'j', 'C': 'J', 'w': 'q', 'W': 'Q',
-    't': 'd', 'T': 'D', 'p': 'b', 'P': 'B',
-    'S': 'j', 'z': 'q', 's': 'd', 'h': 'g',
-}
-
-NASAL_BY_STHANA = {
-    'k': 'N', 'K': 'N', 'g': 'N', 'G': 'N', 'N': 'N',
-    'c': 'Y', 'C': 'Y', 'j': 'Y', 'J': 'Y', 'Y': 'Y', 'S': 'Y',
-    'w': 'R', 'W': 'R', 'q': 'R', 'Q': 'R', 'R': 'R', 'z': 'R',
-    't': 'n', 'T': 'n', 'd': 'n', 'D': 'n', 'n': 'n', 's': 'n',
-    'p': 'm', 'P': 'm', 'b': 'm', 'B': 'm', 'm': 'm',
-}
-
-SCU_EQUIVALENTS = {
-    's': 'S', 't': 'c', 'T': 'C', 'd': 'j', 'D': 'J', 'n': 'Y',
-}
-
-SCU_TRIGGERS = set(SCU_EQUIVALENTS.values()) | {'S'}
 
 SYMBOLIC_CLASSES = {
     "VOWEL": VOWELS,
@@ -100,9 +81,9 @@ class CompiledVidhiRule(PaniniRule):
         r_char = right[0]
         data_ops = {
             "insert", "merge", "substitute", "exact_substitute", "sanjna_substitute",
-            "bijection_substitute", "elide", "dirgha", "voice", "nasalize",
-            "palatalize", "purva_rupa", "visarga_utva", "ro_ri_dirgha",
-            "anusvara", "parasavarna", "natva", "right_substitute",
+            "bijection_substitute", "elide", "dirgha",
+            "purva_rupa", "visarga_utva", "ro_ri_dirgha",
+            "anusvara", "natva", "right_substitute",
             "external_block", "non_operational", "governance", "prohibit",
         }
 
@@ -234,12 +215,20 @@ class CompiledVidhiRule(PaniniRule):
             return left[:-1] + (op.substitute or ""), right
 
         elif op.op_type in {"bijection_substitute", "substitute", "exact_substitute"}:
-            t_prat = self.spec.target_context.pratyahara
-            s_prat = op.substitute
-            if t_prat and s_prat:
+            t_cond = self.spec.target_context
+            s_val = op.substitute
+            if t_cond and s_val:
                 try:
-                    t_list = PratyaharaResolver.resolve_list(t_prat)
-                    s_list = PratyaharaResolver.resolve_list(s_prat)
+                    if t_cond.pratyahara:
+                        t_list = PratyaharaResolver.resolve_list(t_cond.pratyahara)
+                    else:
+                        t_list = _expand_literal_pattern(t_cond.exact_text)
+                        
+                    if s_val.startswith("PRAT:"):
+                        s_list = PratyaharaResolver.resolve_list(s_val.removeprefix("PRAT:"))
+                    else:
+                        s_list = _expand_literal_pattern(s_val)
+                        
                     savarna = {'A': 'a', 'I': 'i', 'U': 'u', 'F': 'f'}
                     lookup = None
                     
@@ -282,24 +271,12 @@ class CompiledVidhiRule(PaniniRule):
         elif op.op_type == "visarga_utva":
             return left[:-2] + 'o', "'" + right[1:]
 
-        elif op.op_type == "voice":
-            return left[:-1] + VOICED_EQUIVALENTS.get(l_char, l_char), right
-
         elif op.op_type == "ro_ri_dirgha":
             from core.phonology import SAVARNA_LONG
             return left[:-2] + SAVARNA_LONG.get(left[-2], left[-2]), right
 
         elif op.op_type == "anusvara":
             return left[:-1] + 'M', right
-
-        elif op.op_type == "parasavarna":
-            return left[:-1] + NASAL_BY_STHANA.get(right[0], 'M'), right
-
-        elif op.op_type == "palatalize":
-            return left[:-1] + SCU_EQUIVALENTS.get(l_char, l_char), right
-
-        elif op.op_type == "nasalize":
-            return left[:-1] + NASAL_BY_STHANA.get(right[0], right[0]), right
 
         elif op.op_type == "right_substitute":
             return left, (op.substitute or "") + right[1:]
@@ -326,6 +303,50 @@ class CompiledVidhiRule(PaniniRule):
                             for r_c in right_targets:
                                 splits.append((combined_surface[:idx] + l_c, r_c + combined_surface[idx+len(op.substitute):]))
                     idx = combined_surface.find(op.substitute, idx + 1)
+
+            elif op.op_type == "bijection_substitute" and op.substitute:
+                # Handle both PRAT: prefixed and literal substitute lists
+                s_val = op.substitute
+                t_cond = self.spec.target_context
+                try:
+                    if s_val.startswith("PRAT:"):
+                        s_list = list(PratyaharaResolver.resolve_list(s_val.removeprefix("PRAT:")))
+                    else:
+                        s_list = _expand_literal_pattern(s_val)
+                    if t_cond.pratyahara:
+                        t_list = list(PratyaharaResolver.resolve_list(t_cond.pratyahara))
+                    else:
+                        t_list = _expand_literal_pattern(t_cond.exact_text or "")
+                    if len(t_list) == len(s_list):
+                        bwd_map = dict(zip(s_list, t_list))
+                        savarna_long = {'i': ['i', 'I'], 'u': ['u', 'U'], 'f': ['f', 'F'], 'a': ['a', 'A']}
+                        for s_char, t_char in bwd_map.items():
+                            targets = savarna_long.get(t_char, [t_char])
+                            idx = combined_surface.find(s_char)
+                            while idx != -1:
+                                if idx > 0:
+                                    r_part = combined_surface[idx+len(s_char):]
+                                    if self._is_valid_right_context(r_part):
+                                        for tc in targets:
+                                            splits.append((combined_surface[:idx] + tc, r_part))
+                                idx = combined_surface.find(s_char, idx + 1)
+                    else:
+                        # Different-length lists: use sthana-based affinity reverse
+                        from core.phonology import get_sthana
+                        for s_char in s_list:
+                            idx = combined_surface.find(s_char)
+                            while idx != -1:
+                                if idx > 0:
+                                    r_part = combined_surface[idx+len(s_char):]
+                                    if self._is_valid_right_context(r_part):
+                                        s_sthana = get_sthana(s_char)
+                                        for t_char in t_list:
+                                            if get_sthana(t_char) == s_sthana:
+                                                splits.append((combined_surface[:idx] + t_char, r_part))
+                                idx = combined_surface.find(s_char, idx + 1)
+                except Exception:
+                    pass
+
             elif op.op_type == "substitute" and op.substitute:
                 targets = _expand_literal_pattern(self.spec.target_context.exact_text or "")
                 idx = combined_surface.find(op.substitute)
@@ -336,6 +357,64 @@ class CompiledVidhiRule(PaniniRule):
                             for target in targets:
                                 splits.append((combined_surface[:idx] + target, r_part))
                     idx = combined_surface.find(op.substitute, idx + 1)
+
+            elif op.op_type == "visarga_utva":
+                # "aH" + "a" -> "o" + "'" — reverse: find 'o' followed by avagraha
+                for idx in range(1, len(combined_surface)):
+                    if combined_surface[idx] == 'o' or (idx > 0 and combined_surface[idx-1:idx+1] == "o'"):
+                        if combined_surface[idx:idx+2] == "o'":
+                            splits.append((combined_surface[:idx] + 'aH', 'a' + combined_surface[idx+2:]))
+                        elif combined_surface[idx] == 'o':
+                            splits.append((combined_surface[:idx] + 'aH', 'a' + combined_surface[idx+1:]))
+
+            elif op.op_type == "purva_rupa":
+                # left ends in vowel, right starts with same vowel -> purvarupa with avagraha
+                idx = combined_surface.find("'")
+                while idx != -1:
+                    if idx > 0:
+                        l_char = combined_surface[idx-1]
+                        splits.append((combined_surface[:idx], l_char + combined_surface[idx+1:]))
+                    idx = combined_surface.find("'", idx + 1)
+
+            elif op.op_type == "natva":
+                # 'n' becomes 'ṇ' -> find 'ṇ' and restore 'n'
+                for s_char in ['R']:  # SLP1: ṇ is R
+                    idx = combined_surface.find(s_char)
+                    while idx != -1:
+                        if idx > 0:
+                            r_part = combined_surface[idx+1:]
+                            splits.append((combined_surface[:idx], 'n' + r_part))
+                        idx = combined_surface.find(s_char, idx + 1)
+
+            elif op.op_type == "anusvara":
+                # 'm' -> 'M' (anusvara) before consonant
+                idx = combined_surface.find('M')
+                while idx != -1:
+                    if idx > 0:
+                        r_part = combined_surface[idx+1:]
+                        splits.append((combined_surface[:idx] + 'm', r_part))
+                    idx = combined_surface.find('M', idx + 1)
+
+            elif op.op_type == "right_substitute" and op.substitute:
+                # right side was substituted (e.g. c -> ch before ś)
+                target_right = self.spec.right_context.exact_text if self.spec.right_context else ""
+                idx = combined_surface.find(op.substitute)
+                while idx != -1:
+                    if idx > 0:
+                        for r_orig in _expand_literal_pattern(target_right) or [op.substitute[0]]:
+                            splits.append((combined_surface[:idx], r_orig + combined_surface[idx+len(op.substitute):]))
+                    idx = combined_surface.find(op.substitute, idx + 1)
+
+            elif op.op_type == "insert" and op.substitute:
+                # augment was inserted (e.g. tuk: SHORT_VOWEL + 'c' inserted 'c')
+                # reverse: find the inserted char and remove it
+                aug = op.substitute
+                idx = combined_surface.find(aug)
+                while idx != -1:
+                    if idx > 0:
+                        splits.append((combined_surface[:idx], combined_surface[idx+len(aug):]))
+                    idx = combined_surface.find(aug, idx + 1)
+
             res_splits = list(set(splits))
             from compiler.registries import ParibhasaRegistry
             return ParibhasaRegistry.intercept_revert(self.spec, combined_surface, grammatical_context, res_splits)
@@ -382,15 +461,16 @@ class CompiledVidhiRule(PaniniRule):
                         for r_c in ['o', 'O']:
                             splits.append((combined_surface[:idx] + l_c, r_c + combined_surface[idx+1:]))
 
-        # 4. Pratyāhāra Bijection Reversion (e.g. Yaṇ 6.1.77) and Exact Substitutions
+        # 4. Pratyāhāra Bijection Reversion (e.g. Yaṇ 6.1.77)
         elif op.op_type in {"bijection_substitute", "substitute", "exact_substitute"}:
             t_prat = self.spec.target_context.pratyahara
-            s_prat = op.substitute
+            s_val = op.substitute
             handled = False
-            if t_prat and s_prat:
+            if t_prat and s_val:
                 try:
                     t_list = PratyaharaResolver.resolve_list(t_prat)
-                    s_list = PratyaharaResolver.resolve_list(s_prat)
+                    s_raw = s_val.removeprefix("PRAT:") if s_val.startswith("PRAT:") else None
+                    s_list = PratyaharaResolver.resolve_list(s_raw) if s_raw else _expand_literal_pattern(s_val)
                     if len(t_list) == len(s_list):
                         handled = True
                         bwd_map = dict(zip(s_list, t_list))
@@ -407,8 +487,8 @@ class CompiledVidhiRule(PaniniRule):
                                 idx = combined_surface.find(s_char, idx + 1)
                 except Exception:
                     pass
-            if not handled and op.substitute and op.substitute not in {"dirgha", "guna", "vriddhi"}:
-                sub_str = op.substitute
+            if not handled and s_val and s_val not in {"dirgha", "guna", "vriddhi"}:
+                sub_str = s_val
                 targets = []
                 if self.spec.target_context.exact_text:
                     targets = [t.strip() for t in self.spec.target_context.exact_text.split(",") if t.strip()]

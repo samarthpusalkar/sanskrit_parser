@@ -1,18 +1,15 @@
+import sys, os
+sys.path.insert(0, os.path.abspath('.'))
 """
 Bootstrap data-backed rule_configs from the current AST compiler.
-
-This migrates mechanically compiled RuleSpec objects into SQLite rows so runtime
-execution can fetch rule semantics as data rather than relying on Python
-sutra-id dispatch. It intentionally preserves the compiler's current output
-instead of inventing per-sutra behavior here.
 """
-
 import argparse
 import sqlite3
 from typing import Optional
-
-from compiler.pipeline import MasterCompilerPipeline
-
+from compiler.pada_cheda import PadaChedaParser
+from compiler.ast_builder import SutraAstBuilder
+from compiler.registries import AdhikaraContext
+from rule_engine.dsl import RuleSpec
 
 def encode_condition(cond) -> str:
     if cond is None:
@@ -20,7 +17,6 @@ def encode_condition(cond) -> str:
     if cond.pratyahara:
         return f"PRAT:{cond.pratyahara}"
     return cond.exact_text or ""
-
 
 def ensure_extended_schema(cur: sqlite3.Cursor) -> None:
     columns = {row[1] for row in cur.execute("PRAGMA table_info(rule_configs)").fetchall()}
@@ -32,7 +28,6 @@ def ensure_extended_schema(cur: sqlite3.Cursor) -> None:
         if col not in columns:
             cur.execute(ddl)
 
-
 def bootstrap_rule_configs(db_path: str, limit: Optional[int] = None, include_unresolved: bool = True) -> int:
     with sqlite3.connect(db_path) as conn:
         cur = conn.cursor()
@@ -41,42 +36,58 @@ def bootstrap_rule_configs(db_path: str, limit: Optional[int] = None, include_un
         cur.execute("DELETE FROM rule_configs WHERE source = 'unresolved'")
         conn.commit()
 
-    MasterCompilerPipeline._compiled_cache = []
-    MasterCompilerPipeline._loaded = False
-    rules = MasterCompilerPipeline.compile_all(db_path)
+        # Get existing configs
+        existing_sutras = {r[0] for r in cur.execute("SELECT sutra_id FROM rule_configs").fetchall()}
+        rows_to_parse = cur.execute("SELECT id, sutra_slp1, sutra_type, pada_cheda FROM sutras WHERE pada_cheda != '' ORDER BY id ASC").fetchall()
 
     rows = []
     seen = set()
-    for rule in rules:
-        spec = rule.spec
-        if spec.governance.get("source"):
+    AdhikaraContext._init_db()
+
+    for sid, slp, stype, pc in rows_to_parse:
+        if sid in existing_sutras:
             continue
-        key = (spec.id, spec.name, spec.operation.op_type, spec.operation.substitute)
-        if key in seen:
+            
+        stype = stype or ""
+        # Skip Sanjna/Paribhasa
+        if stype.startswith("P$") or stype.startswith("AT$") or stype.startswith("AD$") or any(marker in slp for marker in ("sTAne", "prasaNge", "vat", "atiDeSa")):
             continue
-        seen.add(key)
-        rows.append((
-            spec.id,
-            spec.name,
-            encode_condition(spec.target_context),
-            encode_condition(spec.left_context),
-            encode_condition(spec.right_context),
-            spec.operation.op_type,
-            spec.operation.substitute,
-            spec.governance.get("domain", "sapada"),
-            "bootstrap_ast",
-        ))
-        if limit is not None and len(rows) >= limit:
-            break
+        if stype.startswith("S$") or "saMjYA" in pc or "saMjYA" in slp:
+            continue
+
+        props = AdhikaraContext.get_active_properties(sid)
+        dom_str = props.get("domain", "")
+        if "स्वर" in dom_str or "svara" in dom_str.lower() or any(x in slp for x in ("udAtta", "anudAtta", "svarita")):
+            continue
+
+        tokens = PadaChedaParser.parse(pc)
+        try:
+            spec = SutraAstBuilder.build(sid, slp, tokens)
+            key = (spec.id, spec.name, spec.operation.op_type, spec.operation.substitute)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append((
+                spec.id,
+                spec.name,
+                encode_condition(spec.target_context),
+                encode_condition(spec.left_context),
+                encode_condition(spec.right_context),
+                spec.operation.op_type,
+                spec.operation.substitute,
+                props.get("semantic_domain", "samhita"),
+                "bootstrap_ast",
+            ))
+            if limit is not None and len(rows) >= limit:
+                break
+        except Exception:
+            pass
 
     if not rows:
         return 0
 
     with sqlite3.connect(db_path) as conn:
         cur = conn.cursor()
-        ensure_extended_schema(cur)
-        cur.execute("DELETE FROM rule_configs WHERE source = 'bootstrap_ast'")
-        cur.execute("DELETE FROM rule_configs WHERE source = 'unresolved'")
         cur.executemany(
             """
             INSERT INTO rule_configs
@@ -116,7 +127,6 @@ def bootstrap_rule_configs(db_path: str, limit: Optional[int] = None, include_un
         unresolved_count = cur.execute("SELECT COUNT(*) FROM rule_configs WHERE source = 'unresolved'").fetchone()[0]
     return len(rows) + unresolved_count
 
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", default="data/sanskrit_master.db")
@@ -125,7 +135,6 @@ def main() -> None:
     args = parser.parse_args()
     count = bootstrap_rule_configs(args.db, args.limit, include_unresolved=not args.no_unresolved)
     print(f"Inserted/updated {count} generated rule_configs.")
-
 
 if __name__ == "__main__":
     main()

@@ -5,7 +5,7 @@ Encodes continuous surface Sanskrit speech into dense 11D morphological integer 
 using Analysis by Synthesis recursive lattice parsing.
 """
 
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 from tensor.schema import TensorCoordinate
 from tensor.vocab import TensorVocab
 from core.lemmatizer import UniversalLemmatizer
@@ -46,9 +46,19 @@ class TensorVectorizer:
             vecs.append(TensorCoordinate([r_id, pos_id, upa_id, s_id, 0, lak_id, voc_id, pur_id, vac_id, cas_id, gen_id]))
         return vecs
 
+    _decompose_cache: Dict[str, List[str]] = {}
+
     @classmethod
-    def _decompose_lattice(cls, text: str) -> List[str]:
+    def _decompose_lattice(cls, text: str, depth: int = 0) -> List[str]:
+        # Hard depth cap prevents O(n!) explosion on complex strings
+        if depth > 8:
+            return [text]
+
+        if text in cls._decompose_cache:
+            return cls._decompose_cache[text]
+
         if TensorVocab.is_plausible_token(text):
+            cls._decompose_cache[text] = [text]
             return [text]
 
         splits = SanskritCompiler.split_word(text)
@@ -64,7 +74,7 @@ class TensorVectorizer:
         if not valid_candidates:
             for left, right in splits:
                 if TensorVocab.is_plausible_token(left):
-                    sub_decomp = cls._decompose_lattice(right)
+                    sub_decomp = cls._decompose_lattice(right, depth + 1)
                     if sub_decomp and all(TensorVocab.is_plausible_token(w) for w in sub_decomp):
                         candidate = [left] + sub_decomp
                         joined = candidate[0]
@@ -82,6 +92,9 @@ class TensorVectorizer:
                 canon_count = sum(1 for w in cand if UniversalLemmatizer._is_canonical_lemma(UniversalLemmatizer.lemmatize(w)))
                 return (canon_chars, short_stem_bonus, neg_tokens, min_len, canon_count)
             valid_candidates.sort(key=score_cand, reverse=True)
-            return valid_candidates[0]
+            result = valid_candidates[0]
+            cls._decompose_cache[text] = result
+            return result
 
+        cls._decompose_cache[text] = [text]
         return [text]

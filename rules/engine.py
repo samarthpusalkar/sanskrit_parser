@@ -2,11 +2,13 @@
 Universal Pāṇinian Rule Engine Dispatcher and Operational Conflict Resolver.
 
 Manages active sūtra registries, Tripādī ordering rules (8.2.1 - 8.4.68),
-and conflict resolution via Paribhāṣās (e.g. 1.4.2 vipratiṣedhe paraṃ kāryam).
+and conflict resolution via Paribhāṣās (e.g. 1.4.2 vipratiṣedhe paraṃ kāryam)
+with LRU-cached rule ordering and revert results.
 """
 
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from rules.base import PaniniRule, VidhiRule
+import functools
 
 
 class UniversalRuleEngine:
@@ -22,14 +24,21 @@ class UniversalRuleEngine:
 
     def __init__(self, auto_compile: bool = True):
         self._rules: List[PaniniRule] = []
+        self._ordered_cache: Dict[str, List[PaniniRule]] = {}
+        self._revert_cache: Dict[str, List[Tuple[str, str]]] = {}
         if auto_compile:
             from compiler.pipeline import MasterCompilerPipeline
             self._rules.extend(MasterCompilerPipeline.compile_all())
 
     def register_rule(self, rule: PaniniRule):
         self._rules.append(rule)
+        self._ordered_cache.clear()
+        self._revert_cache.clear()
 
     def _get_sandhi_ordered_rules(self, scope: str = "external") -> List[PaniniRule]:
+        if scope in self._ordered_cache:
+            return self._ordered_cache[scope]
+
         def _sort_key(r: PaniniRule) -> Tuple[int, int, float]:
             spec = getattr(r, "spec", None)
             parts = r.sutra_id.split(".")
@@ -38,7 +47,7 @@ class UniversalRuleEngine:
             except Exception:
                 num_id = 999999.0
 
-            # Tripādī domain (8.2.1 onwards = 80201) vs Sapādāsaptādhyāyī
+            # Tripādī domain (8.2.1 onwards = 80200) vs Sapādāsaptādhyāyī
             domain = getattr(spec, "governance", {}).get("domain", "sapada") if spec else "sapada"
             domain_rank = 1 if domain == "tripadi" or num_id >= 80200.0 else 0
 
@@ -67,7 +76,9 @@ class UniversalRuleEngine:
                     rules_pool.append(r)
         else:
             rules_pool = self._rules
-        return sorted(rules_pool, key=_sort_key)
+        ordered = sorted(rules_pool, key=_sort_key)
+        self._ordered_cache[scope] = ordered
+        return ordered
 
     def dispatch_forward(self, left: str, right: str, context: Dict[str, Any] = None) -> Tuple[str, str]:
         """Apply sequential forward sandhi/morphological transformation rules."""
@@ -96,35 +107,87 @@ class UniversalRuleEngine:
         return cur_l, cur_r
 
     def dispatch_revert(self, surface: str, context: Dict[str, Any] = None) -> List[Tuple[str, str]]:
-        """Compute all possible backward sandhi splits using recursive derivation graph traversal."""
+        """Compute all possible backward sandhi splits using pre-indexed rule lookup."""
+        cache_key = surface
+        if cache_key in self._revert_cache:
+            return self._revert_cache[cache_key]
+
         ctx = context or {}
         scope = ctx.get("scope", "external")
         ordered = self._get_sandhi_ordered_rules(scope=scope)
 
-        visited = set()
+        # Build substitute index lazily (only built once per scope)
+        idx_key = "idx_" + scope
+        if idx_key not in self._ordered_cache:
+            sub_index: Dict[str, List[PaniniRule]] = {}
+            for r in ordered:
+                spec = getattr(r, "spec", None)
+                if spec is None:
+                    continue
+                op = getattr(spec, "operation", None)
+                sub = getattr(op, "substitute", None) if op else None
+                op_type = getattr(op, "op_type", "") if op else ""
+                if sub and sub not in {"dirgha", "guna", "vriddhi", "non_operational", "governance"}:
+                    # Strip PRAT: prefix for index key
+                    key_sub = sub.removeprefix("PRAT:")
+                    # Multi-char substitutes stored whole; single-char split to individual chars
+                    if "|" in key_sub:
+                        for part in key_sub.split("|"):
+                            sub_index.setdefault(part, []).append(r)
+                    else:
+                        sub_index.setdefault(key_sub, []).append(r)
+                elif op_type in {"visarga_utva", "purva_rupa"}:
+                    sub_index.setdefault("'", []).append(r)
+                    sub_index.setdefault("o", []).append(r)
+                elif op_type == "natva":
+                    sub_index.setdefault("ṇ", []).append(r)
+                    sub_index.setdefault("R", []).append(r)  # SLP1 ṇ
+                elif op_type == "anusvara":
+                    sub_index.setdefault("M", []).append(r)  # SLP1 anusvara
+                elif op_type in {"ekadesha_savarna_dirgha", "merge_savarna"}:
+                    for c in ["ā", "ī", "ū", "A", "I", "U"]:
+                        sub_index.setdefault(c, []).append(r)
+                elif op_type in {"ekadesha_guna", "ekadesha_vriddhi", "sanjna_substitute"}:
+                    for c in ["e", "o", "ar", "ai", "au", "E", "O"]:
+                        sub_index.setdefault(c, []).append(r)
+                else:
+                    # rules without clear substitute - add to wildcard bucket
+                    sub_index.setdefault("*", []).append(r)
+            self._ordered_cache[idx_key] = sub_index
+
+        sub_index = self._ordered_cache[idx_key]
+        wildcard_rules = sub_index.get("*", [])
+
         results = set()
 
-        def _dfs(cur_surface: str, depth: int):
-            if depth > 3 or cur_surface in visited:
-                return
-            visited.add(cur_surface)
-            found_split = False
-            for r in ordered:
-                try:
-                    raw_splits = r.revert(cur_surface, ctx)
-                    for l, r_str in raw_splits:
-                        if (l, r_str) != (cur_surface, "") and (l, r_str) != ("", cur_surface):
-                            found_split = True
-                            results.add((l, r_str))
-                            # Recursive multi-step chain reversal on left piece
-                            if len(l) > 2 and depth < 2:
-                                for sub_l, sub_r in r.revert(l, ctx):
-                                    if (sub_l, sub_r) != (l, "") and sub_r:
-                                        results.add((sub_l, sub_r + r_str))
-                except Exception:
-                    pass
-            if not found_split and depth == 0:
-                results.add((cur_surface, ""))
+        # Fast pre-filter: only check rules whose substitute appears in surface
+        candidate_rules: List[PaniniRule] = list(wildcard_rules)
+        seen_r_ids = {id(r) for r in wildcard_rules}
+        for sub_key, rules in sub_index.items():
+            if sub_key == "*":
+                continue
+            if sub_key in surface:
+                for r in rules:
+                    rid = id(r)
+                    if rid not in seen_r_ids:
+                        candidate_rules.append(r)
+                        seen_r_ids.add(rid)
 
-        _dfs(surface, 0)
-        return list(results)
+        found_split = False
+        for r in candidate_rules:
+            try:
+                raw_splits = r.revert(surface, ctx)
+                for l, r_str in raw_splits:
+                    if (l, r_str) != (surface, "") and (l, r_str) != ("", surface) and l and r_str is not None:
+                        found_split = True
+                        results.add((l, r_str))
+            except Exception:
+                pass
+
+        if not found_split:
+            results.add((surface, ""))
+
+        result_list = list(results)
+        self._revert_cache[cache_key] = result_list
+        return result_list
+

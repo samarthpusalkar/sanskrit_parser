@@ -5,6 +5,7 @@ Provides O(1) indexed SQL query methods for ~2,000 verb roots (Dhātus)
 and ~40,000 nominal stems (Prātipadikas).
 """
 
+import functools
 import sqlite3
 from pathlib import Path
 from dataclasses import dataclass
@@ -74,17 +75,28 @@ class Lexicon:
     def is_valid_stem(cls, stem_slp1: str) -> bool:
         if not stem_slp1:
             return False
-        conn = cls._get_conn()
-        cur = conn.cursor()
-        cur.execute("SELECT 1 FROM pratipadikas WHERE word_slp1 = ? OR word_iast = ? LIMIT 1", (stem_slp1, stem_slp1))
-        if cur.fetchone():
-            return True
-        cur.execute("SELECT 1 FROM dhatus WHERE dhatu_slp1 = ? OR dhatu_iast = ? LIMIT 1", (stem_slp1, stem_slp1))
-        if cur.fetchone():
-            return True
-        cur.execute("SELECT 1 FROM dhatu_forms WHERE form_slp1 = ? OR form_iast = ? LIMIT 1", (stem_slp1, stem_slp1))
-        return bool(cur.fetchone())
+        return cls._is_valid_stem_cached(stem_slp1)
+
+    @classmethod
+    def _is_valid_stem_cached(cls, stem_slp1: str) -> bool:
+        # Delegate to module-level cached function (populated on first call)
+        return _cached_is_valid_stem(stem_slp1)
 
     @classmethod
     def load(cls, fixture_path: Optional[Path] = None) -> None:
         cls._get_conn()
+
+
+@functools.lru_cache(maxsize=65536)
+def _cached_is_valid_stem(stem_slp1: str) -> bool:
+    """Module-level cached wrapper for Lexicon.is_valid_stem — prevents repeated SQL hits."""
+    conn = Lexicon._get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM pratipadikas WHERE word_slp1 = ? OR word_iast = ? LIMIT 1", (stem_slp1, stem_slp1))
+    if cur.fetchone():
+        return True
+    cur.execute("SELECT 1 FROM dhatus WHERE dhatu_slp1 = ? OR dhatu_iast = ? LIMIT 1", (stem_slp1, stem_slp1))
+    if cur.fetchone():
+        return True
+    cur.execute("SELECT 1 FROM dhatu_forms WHERE form_slp1 = ? OR form_iast = ? LIMIT 1", (stem_slp1, stem_slp1))
+    return bool(cur.fetchone())
