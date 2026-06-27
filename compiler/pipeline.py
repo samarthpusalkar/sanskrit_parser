@@ -58,6 +58,8 @@ class CompiledVidhiRule(PaniniRule):
                 return False
 
         # 2. Check Right Context (right start)
+        if right and not self.spec.right_context and not self.spec.operation.op_type.startswith("ekadesha"):
+            return False
         if not self._is_valid_right_context(right):
             return False
 
@@ -260,6 +262,7 @@ class MasterCompilerPipeline:
 
         from compiler.registries import SanjnaRegistry, ParibhasaRegistry
         from compiler.anuvritti import AnuvrittiEngine
+        from compiler.exceptions import PaninianCompilationError
 
         compiled = []
         anuvritti = AnuvrittiEngine.get_instance()
@@ -267,19 +270,36 @@ class MasterCompilerPipeline:
 
         for sid, slp, stype, pc in rows:
             stype = stype or ""
-            if stype.startswith("S$"):
-                SanjnaRegistry.register_sutra(sid, slp)
-                continue
-            elif stype.startswith("P$"):
+            tokens = PadaChedaParser.parse(pc)
+
+            # Algorithmic classification based on Vibhakti parsing and markers
+            if stype.startswith("P$") or stype.startswith("AT$") or stype.startswith("AD$") or any(
+                marker in slp for marker in ("sTAne", "prasaNge", "vat", "atiDeSa")
+            ) or any(t.slp1 == "na" for t in tokens):
                 ParibhasaRegistry.register_sutra(sid, slp)
                 continue
-            elif stype.startswith("AD$"):
+            elif stype.startswith("S$") or "saMjYA" in pc or "saMjYA" in slp or (
+                all(t.is_substitute for t in tokens) and not any(t.is_target or t.is_left_context or t.is_right_context for t in tokens)
+            ):
+                SanjnaRegistry.register_sutra(sid, slp)
                 continue
 
-            tokens = PadaChedaParser.parse(pc)
-            spec = SutraAstBuilder.build(sid, slp, tokens)
-            rule = CompiledVidhiRule(spec)
-            compiled.append(rule)
+            # Skip Svara (accentuation) adhikāra rules so they do not distort letter Sandhi
+            parts = sid.split(".")
+            if len(parts) == 3 and parts[0] == "6" and parts[1] == "1" and int(parts[2]) >= 158:
+                continue
+            if len(parts) == 3 and parts[0] == "6" and parts[1] == "2":
+                continue
+            if any(x in slp for x in ("udAtta", "anudAtta", "svarita")):
+                continue
+
+            try:
+                spec = SutraAstBuilder.build(sid, slp, tokens)
+                rule = CompiledVidhiRule(spec)
+                compiled.append(rule)
+            except PaninianCompilationError:
+                # Rule lacks operational transformation context; register as non-operational
+                pass
 
         cls._compiled_cache = compiled
         cls._loaded = True

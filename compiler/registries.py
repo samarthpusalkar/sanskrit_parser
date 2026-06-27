@@ -70,6 +70,42 @@ class AdhikaraContext:
         return props
 
 
+class PhoneticMatrix:
+    """Declarative feature matrix encoding classical Pāṇinian articulation features."""
+    STHANA = {
+        'a': {'kantha'}, 'A': {'kantha'},
+        'i': {'talu'}, 'I': {'talu'},
+        'u': {'ostha'}, 'U': {'ostha'},
+        'f': {'murdhan'}, 'F': {'murdhan'},
+        'x': {'danta'}, 'X': {'danta'},
+        'e': {'kantha', 'talu'}, 'E': {'kantha', 'talu'},
+        'o': {'kantha', 'ostha'}, 'O': {'kantha', 'ostha'},
+        'ar': {'kantha', 'murdhan'}, 'al': {'kantha', 'danta'},
+        'Ar': {'kantha', 'murdhan'}, 'Al': {'kantha', 'danta'}
+    }
+
+    @classmethod
+    def get_features(cls, char: str) -> Set[str]:
+        return cls.STHANA.get(char, set())
+
+    @classmethod
+    def select_closest(cls, input_chars: List[str], candidates: Set[str]) -> str:
+        """Paribhāṣā 1.1.50 sthāne 'ntaratamaḥ: Select candidate minimizing Hamming feature distance."""
+        target_features = set()
+        for c in input_chars:
+            target_features.update(cls.get_features(c))
+
+        best_cand = None
+        min_dist = 999
+        for cand in sorted(candidates):
+            cand_features = cls.get_features(cand)
+            diff = len(target_features.symmetric_difference(cand_features))
+            if diff < min_dist:
+                min_dist = diff
+                best_cand = cand
+        return best_cand or sorted(candidates)[0]
+
+
 class ParibhasaRegistry:
     """Registry storing Paribhāṣā meta-rules acting as runtime interceptors."""
 
@@ -94,16 +130,14 @@ class ParibhasaRegistry:
         # Paribhāṣā 1.1.50 sthāne 'ntaratamaḥ (closest articulation affinity)
         op = getattr(rule_spec, "operation", None)
         if op and getattr(op, "op_type", "") in {"ekadesha_guna", "sanjna_substitute"}:
-            if op.substitute == "guna" and left and right:
+            if op.substitute in {"guna", "vriddhi"} and left and right:
                 l_char = left[-1]
                 r_char = right[0]
-                # If merging a + u -> o (guttural + labial -> guttural-labial o)
-                if l_char in {'a', 'A'} and r_char in {'u', 'U'}:
-                    return left[:-1] + 'o', right[1:]
-                if l_char in {'a', 'A'} and r_char in {'i', 'I'}:
-                    return left[:-1] + 'e', right[1:]
-                if l_char in {'a', 'A'} and r_char in {'f', 'F'}:
-                    return left[:-1] + 'ar', right[1:]
+                sanjna_key = "guRa" if op.substitute == "guna" else "vfdDi"
+                candidates = SanjnaRegistry.resolve(sanjna_key)
+                if candidates:
+                    closest = PhoneticMatrix.select_closest([l_char, r_char], candidates)
+                    return left[:-1] + closest, right[1:]
 
         return res_l, res_r
 

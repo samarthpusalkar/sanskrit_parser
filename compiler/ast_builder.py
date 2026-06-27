@@ -169,7 +169,7 @@ class SutraAstBuilder:
                     if is_ekadesha and (right_cond or is_savarna or sutra_id == "6.1.101"):
                         op_type = "ekadesha_savarna_dirgha"
                     else:
-                        op_type = "merge_savarna" if right_cond else "dirgha"
+                        op_type = "dirgha"
                     sub_val = "dirgha"
                 elif slp in PRATYAHARA_STEMS or norm in PRATYAHARA_STEMS:
                     op_type = "bijection_substitute"
@@ -190,16 +190,11 @@ class SutraAstBuilder:
         anuvritti = AnuvrittiEngine.get_instance()
 
         if (op_type in {"substitute", "exact_substitute"} and not sub_val) or sub_val == "":
-            inh = cls._inherit_anuvritti_substitute(sutra_id)
-            if inh:
-                op_type = "exact_substitute"
-                sub_val = inh
-            else:
-                inh_slots = anuvritti.get_inherited_slots(sutra_id)
-                inh_op = inh_slots.get("operation")
-                if inh_op and getattr(inh_op, "substitute", ""):
-                    op_type = inh_op.op_type
-                    sub_val = inh_op.substitute
+            inh_slots = anuvritti.get_inherited_slots(sutra_id)
+            inh_op = inh_slots.get("operation")
+            if inh_op and getattr(inh_op, "substitute", ""):
+                op_type = inh_op.op_type
+                sub_val = inh_op.substitute
 
         if not has_target:
             inh_slots = anuvritti.get_inherited_slots(sutra_id)
@@ -207,8 +202,15 @@ class SutraAstBuilder:
             if inh_tgt:
                 target_cond = inh_tgt
                 has_target = True
-            else:
-                target_cond.pratyahara = "aC"
+
+        if not has_target and not left_cond and not right_cond:
+            raise PaninianCompilationError(
+                message="Unresolved operational transformation context in Vidhi rule",
+                sutra_id=sutra_id,
+                sutra_text=sutra_name,
+                failed_token="<context>",
+                missing_slots=["target"]
+            )
 
         op_spec = OperationSpec(op_type=op_type, substitute=sub_val)
         anuvritti.step(sutra_id, target_cond if has_target else None, left_cond, right_cond, op_spec)
