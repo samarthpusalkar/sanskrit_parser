@@ -30,12 +30,18 @@ class UniversalRuleEngine:
         self._rules.append(rule)
 
     def _get_sandhi_ordered_rules(self) -> List[PaniniRule]:
-        priority_ids = ["6.1.101", "6.1.88", "6.1.87", "6.1.77"]
-        p_rules = [r for r in self._rules if r.sutra_id in priority_ids]
-        p_rules.sort(key=lambda r: priority_ids.index(r.sutra_id))
-        other_sandhi = [r for r in self._rules if r.sutra_id not in priority_ids and r.sutra_id.startswith(("6.1.", "8.2.", "8.3.", "8.4.", "7.2."))]
-        rest = [r for r in self._rules if r not in p_rules and r not in other_sandhi]
-        return p_rules + other_sandhi + rest
+        def _sort_key(r: PaniniRule) -> int:
+            op_type = getattr(getattr(r, "spec", None), "operation", None)
+            op_name = getattr(op_type, "op_type", "") if op_type else ""
+            if op_name in {"ekadesha_savarna_dirgha", "ekadesha_vriddhi"}:
+                return 0
+            if op_name == "ekadesha_guna":
+                return 1
+            if r.sutra_id.startswith(("6.1.", "8.2.", "8.3.", "8.4.", "7.2.")):
+                return 2
+            return 3
+
+        return sorted(self._rules, key=_sort_key)
 
     def dispatch_forward(self, left: str, right: str, context: Dict[str, Any] = None) -> Tuple[str, str]:
         """Apply sequential forward sandhi/morphological transformation rules."""

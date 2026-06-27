@@ -101,13 +101,17 @@ class SutraAstBuilder:
                     op_type = "elide"
                     sub_val = None
                 elif norm in {"guRa", "guRa-vfdDI"}:
-                    op_type = "sanjna_substitute"
+                    op_type = "ekadesha_guna" if sutra_id.startswith("6.1.") else "sanjna_substitute"
                     sub_val = "guna"
                 elif norm in {"vfdDi", "vfddhi"}:
-                    op_type = "sanjna_substitute"
+                    op_type = "ekadesha_vriddhi" if sutra_id.startswith("6.1.") else "sanjna_substitute"
                     sub_val = "vriddhi"
                 elif norm == "dIrGa":
-                    op_type = "merge_savarna" if right_cond else "dirgha"
+                    is_savarna = any("savarR" in tok.slp1 for tok in tokens)
+                    if sutra_id.startswith("6.1.") and (right_cond or is_savarna or sutra_id == "6.1.101"):
+                        op_type = "ekadesha_savarna_dirgha"
+                    else:
+                        op_type = "merge_savarna" if right_cond else "dirgha"
                     sub_val = "dirgha"
                 elif slp in PRATYAHARA_STEMS or norm in PRATYAHARA_STEMS:
                     op_type = "bijection_substitute"
@@ -125,10 +129,10 @@ class SutraAstBuilder:
         op_spec = OperationSpec(op_type=op_type, substitute=sub_val)
 
         domain = "sapada"
-        # Tripādī boundary: 8.2.1 onwards
         parts = sutra_id.split(".")
-        if len(parts) == 3 and (int(parts[0]) > 8 or (int(parts[0]) == 8 and int(parts[1]) >= 2)):
-            domain = "tripadi"
+        if len(parts) == 3:
+            if int(parts[0]) > 8 or (int(parts[0]) == 8 and int(parts[1]) >= 2):
+                domain = "tripadi"
 
         return RuleSpec(
             id=sutra_id,

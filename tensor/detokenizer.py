@@ -35,7 +35,7 @@ class TensorDetokenizer:
 
             pos = TensorVocab.REV_POS.get(t.pos_id)
             if pos == "noun":
-                stem = TensorVocab.REV_STEMS.get(t.root_id, "rāma")
+                stem = TensorVocab.get_token(t.root_id) or "rāma"
                 if t.case_id == 0:
                     word = stem
                 else:
@@ -44,14 +44,14 @@ class TensorDetokenizer:
                     word = SanskritCompiler.decline_noun(stem, case=case_str, number=num_str)
                 words.append(word)
             elif pos == "verb":
-                root = TensorVocab.REV_ROOTS.get(t.root_id, "bhū")
+                root = TensorVocab.get_token(t.root_id) or "bhū"
                 lakara = TensorVocab.REV_LAKARA.get(t.lakara_id, "laṭ")
                 purusa = t.purusa_id if t.purusa_id else 3
                 vacana = t.vacana_id if t.vacana_id else 1
                 word = SanskritCompiler.conjugate_verb(root, gana=1, lakara=lakara, purusa=purusa, vacana=vacana)
                 words.append(word)
             elif pos == "avyaya":
-                stem = TensorVocab.REV_STEMS.get(t.root_id, "api")
+                stem = TensorVocab.get_token(t.root_id) or "api"
                 words.append(stem)
             else:
                 word = TensorVocab.get_token(t.root_id)

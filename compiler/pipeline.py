@@ -31,18 +31,18 @@ class CompiledVidhiRule(PaniniRule):
         l_char = left[-1]
         r_char = right[0]
 
-        # Special handling for classical major Ekādeśa Sandhi sūtras
-        if self.sutra_id == "6.1.101" or op.op_type == "merge_savarna":
+        # Special handling for classical major Ekādeśa Sandhi sūtras via abstract op_type
+        if op.op_type in {"ekadesha_savarna_dirgha", "merge_savarna"}:
             savarna_groups = [{'a', 'A'}, {'i', 'I'}, {'u', 'U'}, {'f', 'F'}, {'x'}]
             return any(l_char in g and r_char in g for g in savarna_groups)
 
-        if self.sutra_id == "6.1.88" or (op.op_type == "sanjna_substitute" and op.substitute == "vriddhi"):
+        if op.op_type == "ekadesha_vriddhi":
             return l_char in {'a', 'A'} and PratyaharaResolver.contains("eC", r_char)
 
-        if self.sutra_id == "6.1.87" or (op.op_type == "sanjna_substitute" and op.substitute == "guna"):
+        if op.op_type == "ekadesha_guna":
             if l_char not in {'a', 'A'} or not PratyaharaResolver.contains("aC", r_char):
                 return False
-            # Blocked if savarna (6.1.101) or eC (6.1.88)
+            # Blocked if savarna or eC
             if r_char in {'a', 'A'} or PratyaharaResolver.contains("eC", r_char):
                 return False
             return True
@@ -79,12 +79,12 @@ class CompiledVidhiRule(PaniniRule):
         if op.op_type == "elide":
             return left[:-1], right
 
-        elif op.op_type in {"merge_savarna", "dirgha"} or op.substitute == "dirgha" or self.sutra_id == "6.1.101":
+        elif op.op_type in {"ekadesha_savarna_dirgha", "merge_savarna", "dirgha"} or op.substitute == "dirgha":
             dirgha_map = {'a': 'A', 'A': 'A', 'i': 'I', 'I': 'I', 'u': 'U', 'U': 'U', 'f': 'F', 'F': 'F'}
             res_char = dirgha_map.get(l_char, l_char)
             return left[:-1] + res_char, right[1:] if right else right
 
-        elif self.sutra_id == "6.1.87" or (op.op_type == "sanjna_substitute" and op.substitute == "guna"):
+        elif op.op_type == "ekadesha_guna" or (op.op_type == "sanjna_substitute" and op.substitute == "guna"):
             if right and right[0] in {'i', 'I'}:
                 return left[:-1] + 'e', right[1:]
             elif right and right[0] in {'u', 'U'}:
@@ -93,7 +93,7 @@ class CompiledVidhiRule(PaniniRule):
                 return left[:-1] + 'ar', right[1:]
             return left[:-1] + 'e', right[1:] if right else right
 
-        elif self.sutra_id == "6.1.88" or (op.op_type == "sanjna_substitute" and op.substitute == "vriddhi"):
+        elif op.op_type == "ekadesha_vriddhi" or (op.op_type == "sanjna_substitute" and op.substitute == "vriddhi"):
             if right and right[0] in {'e', 'E'}:
                 return left[:-1] + 'E', right[1:]
             elif right and right[0] in {'o', 'O'}:
@@ -126,8 +126,8 @@ class CompiledVidhiRule(PaniniRule):
         if not combined_surface:
             return splits
 
-        # 1. Ekādeśa Savarṇa-Dīrgha Reversion (6.1.101)
-        if self.sutra_id == "6.1.101" or op.op_type == "merge_savarna" or op.substitute == "dirgha":
+        # 1. Ekādeśa Savarṇa-Dīrgha Reversion
+        if op.op_type in {"ekadesha_savarna_dirgha", "merge_savarna"} or op.substitute == "dirgha":
             d_pairs = [('A', ['a', 'A']), ('I', ['i', 'I']), ('U', ['u', 'U'])]
             for char, targets in d_pairs:
                 idx = combined_surface.find(char)
@@ -137,8 +137,8 @@ class CompiledVidhiRule(PaniniRule):
                             splits.append((combined_surface[:idx] + l_c, r_c + combined_surface[idx+1:]))
                     idx = combined_surface.find(char, idx + 1)
 
-        # 2. Guṇa Ekādeśa Reversion (6.1.87)
-        elif self.sutra_id == "6.1.87" or (op.op_type == "sanjna_substitute" and op.substitute == "guna"):
+        # 2. Guṇa Ekādeśa Reversion
+        elif op.op_type == "ekadesha_guna" or (op.op_type == "sanjna_substitute" and op.substitute == "guna"):
             for idx, char in enumerate(combined_surface):
                 if idx == 0: continue
                 if char == 'e':
@@ -154,8 +154,8 @@ class CompiledVidhiRule(PaniniRule):
                         for r_c in ['f', 'F']:
                             splits.append((combined_surface[:idx-1] + l_c, r_c + combined_surface[idx+1:]))
 
-        # 3. Vṛddhi Ekādeśa Reversion (6.1.88)
-        elif self.sutra_id == "6.1.88" or (op.op_type == "sanjna_substitute" and op.substitute == "vriddhi"):
+        # 3. Vṛddhi Ekādeśa Reversion
+        elif op.op_type == "ekadesha_vriddhi" or (op.op_type == "sanjna_substitute" and op.substitute == "vriddhi"):
             for idx, char in enumerate(combined_surface):
                 if idx == 0: continue
                 if char == 'E':

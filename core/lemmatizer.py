@@ -33,24 +33,40 @@ class UniversalLemmatizer:
         "jñānam": "jñāna", "nāthaḥ": "nātha", "aśvā": "aśva", "ambaraḥ": "ambara"
     }
 
-    CORE_BENCHMARK_WORDS: Set[str] = {
-        "deva", "ālaya", "sūrya", "udaya", "rāma", "sukha", "duḥkha", "dharma", "kṣetra",
-        "na", "ambara", "karman", "yuṣmad", "kṣetrajña", "jñāna", "akarman", "saṅga",
-        "bhū", "vāc", "artha", "iva", "nātha", "pīta", "adhikāra", "tathā", "eva",
-        "vāk", "īśa", "taru", "chāyā", "namas", "kṛ", "kim", "asmad", "mātṛ", "pitṛ",
-        "pañcan", "vaṭī", "prati", "utpanna", "car", "tad", "śru", "padma", "patra",
-        "akṣan", "bhrātṛ", "iti", "śiva", "ca", "as", "yadā", "i", "upāśrita", "jagat",
-        "nivāsa", "mahat", "ṛṣi", "vyāsa", "gam", "api", "ac", "anta", "pums", "liṅga",
-        "aśva", "adas", "dhāv", "chatra"
-    }
+    _KNOWN_CACHE: Set[str] = set()
+    _CACHE_LOADED: bool = False
+
+    @classmethod
+    def _ensure_cache(cls):
+        if cls._CACHE_LOADED:
+            return
+        cls._CACHE_LOADED = True
+        import sqlite3, os
+        db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "sanskrit_master.db")
+        if os.path.exists(db_path):
+            try:
+                conn = sqlite3.connect(db_path)
+                c = conn.cursor()
+                for row in c.execute("SELECT dhatu_iast, dhatu_slp1 FROM dhatus"):
+                    if row[0]: cls._KNOWN_CACHE.add(row[0])
+                    if row[1]: cls._KNOWN_CACHE.add(row[1])
+                for row in c.execute("SELECT word_iast, word_slp1 FROM pratipadikas"):
+                    if row[0]: cls._KNOWN_CACHE.add(row[0])
+                    if row[1]: cls._KNOWN_CACHE.add(row[1])
+                conn.close()
+            except Exception:
+                pass
 
     @classmethod
     def is_known(cls, word: str) -> bool:
         if not word:
             return False
-        if word in cls.LEMMA_MAP or word in cls.CORE_BENCHMARK_WORDS:
+        cls._ensure_cache()
+        if word in cls.LEMMA_MAP or word in cls._KNOWN_CACHE:
             return True
         slp = iast_to_slp1(word) if word else ""
+        if slp in cls._KNOWN_CACHE:
+            return True
         return Lexicon.is_valid_stem(word) or (bool(slp) and Lexicon.is_valid_stem(slp))
 
     @classmethod
