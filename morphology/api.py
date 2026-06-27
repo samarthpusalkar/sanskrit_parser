@@ -13,10 +13,15 @@ class SanskritCompiler:
     """End-to-end Pāṇinian compilation engine."""
 
     @staticmethod
-    def join_words(left_iast: str, right_iast: str, output_encoding: str = "iast") -> str:
+    def join_words(left_iast: str, right_iast: str, output_encoding: str = "iast", is_samasa: bool = False) -> str:
         """Join two words using Sandhi rules."""
         l_slp = iast_to_slp1(left_iast)
         r_slp = iast_to_slp1(right_iast)
+        
+        # Apply supo dhātuprātipadikayoḥ (2.4.71) for Samāsa via database inversion
+        if is_samasa:
+            l_slp = SubantaGenerator.get_stem(l_slp)
+                
         res_slp = SandhiEngine.join(l_slp, r_slp)
 
         if output_encoding == "devanagari":

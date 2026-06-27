@@ -85,24 +85,40 @@ class UniversalRuleEngine:
         ctx = context or {}
         scope = ctx.get("scope", "external")
         cur_l, cur_r = left, right
+        
         ordered = self._get_sandhi_ordered_rules(scope=scope)
+        sapada_rules = [r for r in ordered if getattr(r.spec.governance, "domain", "sapada") != "tripadi" and not r.sutra_id.startswith("8.2") and not r.sutra_id.startswith("8.3") and not r.sutra_id.startswith("8.4")]
+        tripadi_rules = [r for r in ordered if r not in sapada_rules]
+
         applied_rules = set()
 
+        # Phase 1: Sapādāsaptādhyāyī (Iterative until convergence)
         max_steps = 10
         for _ in range(max_steps):
             mutated = False
-            for r in ordered:
+            for r in sapada_rules:
                 if r.sutra_id in applied_rules:
-                    continue  # Sakṛd eva pravartate: a rule applies once per derivation target
+                    continue  # Sakṛd eva pravartate
                 if r.matches(cur_l, cur_r, ctx):
                     new_l, new_r = r.apply(cur_l, cur_r, ctx)
                     if new_l != cur_l or new_r != cur_r:
                         cur_l, cur_r = new_l, new_r
                         applied_rules.add(r.sutra_id)
                         mutated = True
-                        break  # Restart scan from highest priority rule
+                        break  # Restart scan from highest priority Sapāda rule
             if not mutated:
                 break
+
+        # Phase 2: Tripādī (Strictly sequential, no restarts)
+        for r in tripadi_rules:
+            if r.sutra_id in applied_rules:
+                continue
+            if r.matches(cur_l, cur_r, ctx):
+                new_l, new_r = r.apply(cur_l, cur_r, ctx)
+                if new_l != cur_l or new_r != cur_r:
+                    cur_l, cur_r = new_l, new_r
+                    applied_rules.add(r.sutra_id)
+                    # We do NOT break here. Tripādī is strictly linear.
 
         return cur_l, cur_r
 

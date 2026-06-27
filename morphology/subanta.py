@@ -77,3 +77,49 @@ class SubantaGenerator:
         if suffix in {"s", "H"}:
             return stem_slp1 + "H"
         return SandhiEngine.join(stem_slp1, suffix)
+
+    _INVERTED_CACHE: Optional[Dict[str, str]] = None
+
+    @classmethod
+    def get_stem(cls, inflected_slp1: str) -> str:
+        """
+        Reverse-resolve an inflected nominal word (Subanta) to its base stem (Prātipadika).
+        Used during Samāsa (compound formation) to execute supo dhātuprātipadikayoḥ (2.4.71).
+        """
+        if not inflected_slp1:
+            return inflected_slp1
+
+        cls._ensure_cache()
+        if cls._INVERTED_CACHE is None:
+            cls._INVERTED_CACHE = {}
+            for stem, forms in cls._DB_CACHE.items():
+                for f in forms:
+                    clean_f = f.split("-")[-1]
+                    if clean_f.startswith("he "):
+                        clean_f = clean_f[3:]
+                    if clean_f and clean_f not in cls._INVERTED_CACHE:
+                        cls._INVERTED_CACHE[clean_f] = stem
+
+        # 1. Exact lookup in database paradigm table
+        if inflected_slp1 in cls._INVERTED_CACHE:
+            return cls._INVERTED_CACHE[inflected_slp1]
+
+        # 2. Check if it's already a valid stem or root in Lexicon
+        from data.lexicon import Lexicon
+        if Lexicon.is_valid_stem(inflected_slp1):
+            return inflected_slp1
+
+        # 3. Dynamic OOV suffix stripping sorted by length descending
+        suffixes = sorted(set(cls._SUP_FALLBACK.values()) | {"sya", "Am", "ena", "Aya", "At", "as", "is", "es", "H", "m", "O", "i"}, key=len, reverse=True)
+        for suff in suffixes:
+            if suff and inflected_slp1.endswith(suff) and len(inflected_slp1) > len(suff):
+                cand = inflected_slp1[:-len(suff)]
+                if cand.endswith("A") and not Lexicon.is_valid_stem(cand):
+                    # Try restoring short 'a' stem (e.g. rāmāt -> rāmā -> rāma)
+                    cand_a = cand[:-1] + "a"
+                    if Lexicon.is_valid_stem(cand_a):
+                        return cand_a
+                if Lexicon.is_valid_stem(cand):
+                    return cand
+
+        return inflected_slp1

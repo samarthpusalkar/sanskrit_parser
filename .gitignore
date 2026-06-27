@@ -99,4 +99,11 @@ Thumbs.db
 tmp/
 temp/
 tests/results/
+tests/basic_grammar_test*.*
+tests/forward_parser_test*.*
+data/sandhi_train.sample.json
+data/sandhi_test.sample.json
+data/sandhi_train.jsonl
+data/sandhi_test.jsonl
 *.txt
+*.trace
