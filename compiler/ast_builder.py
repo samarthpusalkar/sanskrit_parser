@@ -20,8 +20,29 @@ PRATYAHARA_STEMS = {
 }
 
 
+from core.shiva_sutras import PratyaharaResolver
+
+
 class SutraAstBuilder:
     """Converts a resolved list of PadaTokens into a Pāṇinian RuleSpec AST."""
+
+    @classmethod
+    def _resolve_pratyahara(cls, slp: str) -> Optional[str]:
+        if slp in PRATYAHARA_STEMS:
+            return PRATYAHARA_STEMS[slp]
+        stems_to_try = [slp]
+        for suffix in ("aH", "AH", "i", "e", "s", "H"):
+            if slp.endswith(suffix) and len(slp) > len(suffix):
+                stems_to_try.append(slp[:-len(suffix)])
+        for stem in stems_to_try:
+            if len(stem) >= 2:
+                candidate = stem[:-1] + stem[-1].upper()
+                try:
+                    PratyaharaResolver.resolve(candidate)
+                    return candidate
+                except Exception:
+                    pass
+        return None
 
     @classmethod
     def build(cls, sutra_id: str, sutra_name: str, tokens: List[PadaToken], priority: int = 100) -> RuleSpec:
@@ -36,12 +57,13 @@ class SutraAstBuilder:
 
         for t in tokens:
             slp = t.slp1
+            prat = cls._resolve_pratyahara(slp)
 
             # 1. Target condition (Genitive / 6th case)
             if t.is_target:
                 has_target = True
-                if slp in PRATYAHARA_STEMS:
-                    target_cond.pratyahara = PRATYAHARA_STEMS[slp]
+                if prat:
+                    target_cond.pratyahara = prat
                 else:
                     target_cond.exact_text = slp[:-1] if slp.endswith(("s", "H")) else slp
 
@@ -49,8 +71,8 @@ class SutraAstBuilder:
             elif t.is_right_context:
                 if right_cond is None:
                     right_cond = ConditionSpec(match_pos="start")
-                if slp in PRATYAHARA_STEMS:
-                    right_cond.pratyahara = PRATYAHARA_STEMS[slp]
+                if prat:
+                    right_cond.pratyahara = prat
                 else:
                     right_cond.exact_text = slp[:-1] if slp.endswith(("i", "e")) else slp
 
@@ -58,8 +80,19 @@ class SutraAstBuilder:
             elif t.is_left_context:
                 if left_cond is None:
                     left_cond = ConditionSpec(match_pos="end")
-                if slp in PRATYAHARA_STEMS:
-                    left_cond.pratyahara = PRATYAHARA_STEMS[slp]
+                if prat:
+                    left_cond.pratyahara = prat
+                else:
+                    norm = slp[:-1] if slp.endswith(("s", "H", "t")) else slp
+                    left_cond.exact_text = norm
+                if sutra_id.startswith("6.1.") and not has_target:
+                    has_target = True
+                    if prat:
+                        target_cond.pratyahara = prat
+                    elif slp in {"At", "aT", "at"}:
+                        target_cond.exact_text = "a,A"
+                    else:
+                        target_cond.exact_text = left_cond.exact_text
 
             # 4. Substitute / Operation (Nominative / 1st case)
             elif t.is_substitute:

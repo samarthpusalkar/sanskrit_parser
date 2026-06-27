@@ -27,9 +27,28 @@ class CompiledVidhiRule(PaniniRule):
         if not left or not right:
             return False
 
+        op = self.spec.operation
+        l_char = left[-1]
+        r_char = right[0]
+
+        # Special handling for classical major Ekādeśa Sandhi sūtras
+        if self.sutra_id == "6.1.101" or op.op_type == "merge_savarna":
+            savarna_groups = [{'a', 'A'}, {'i', 'I'}, {'u', 'U'}, {'f', 'F'}, {'x'}]
+            return any(l_char in g and r_char in g for g in savarna_groups)
+
+        if self.sutra_id == "6.1.88" or (op.op_type == "sanjna_substitute" and op.substitute == "vriddhi"):
+            return l_char in {'a', 'A'} and PratyaharaResolver.contains("eC", r_char)
+
+        if self.sutra_id == "6.1.87" or (op.op_type == "sanjna_substitute" and op.substitute == "guna"):
+            if l_char not in {'a', 'A'} or not PratyaharaResolver.contains("aC", r_char):
+                return False
+            # Blocked if savarna (6.1.101) or eC (6.1.88)
+            if r_char in {'a', 'A'} or PratyaharaResolver.contains("eC", r_char):
+                return False
+            return True
+
         # 1. Check Target Context (left ending)
         tgt = self.spec.target_context
-        l_char = left[-1]
         if tgt.pratyahara:
             if not PratyaharaResolver.contains(tgt.pratyahara, l_char):
                 return False
@@ -41,11 +60,10 @@ class CompiledVidhiRule(PaniniRule):
         # 2. Check Right Context (right start)
         rgt = self.spec.right_context
         if rgt:
-            r_char = right[0]
             if rgt.pratyahara:
                 if not PratyaharaResolver.contains(rgt.pratyahara, r_char):
                     return False
-            elif rgt.exact_text:
+            elif rgt.exact_text and rgt.exact_text not in {"savarR", "ac"}:
                 allowed = set(rgt.exact_text.split(","))
                 if r_char not in allowed and right != rgt.exact_text:
                     return False
@@ -61,19 +79,26 @@ class CompiledVidhiRule(PaniniRule):
         if op.op_type == "elide":
             return left[:-1], right
 
-        elif op.op_type in {"merge_savarna", "dirgha"} or op.substitute == "dirgha":
+        elif op.op_type in {"merge_savarna", "dirgha"} or op.substitute == "dirgha" or self.sutra_id == "6.1.101":
             dirgha_map = {'a': 'A', 'A': 'A', 'i': 'I', 'I': 'I', 'u': 'U', 'U': 'U', 'f': 'F', 'F': 'F'}
             res_char = dirgha_map.get(l_char, l_char)
-            return left[:-1] + res_char, right[1:] if op.op_type == "merge_savarna" and right else right
+            return left[:-1] + res_char, right[1:] if right else right
 
-        elif op.op_type == "sanjna_substitute":
-            sub = op.substitute
-            if sub == "guna":
-                gmap = {'i': 'e', 'I': 'e', 'u': 'o', 'U': 'o', 'f': 'ar', 'F': 'ar', 'x': 'al'}
-                return left[:-1] + gmap.get(l_char, 'a'), right
-            elif sub == "vriddhi":
-                vmap = {'a': 'A', 'A': 'A', 'i': 'E', 'I': 'E', 'u': 'O', 'U': 'O', 'f': 'Ar', 'F': 'Ar'}
-                return left[:-1] + vmap.get(l_char, 'A'), right
+        elif self.sutra_id == "6.1.87" or (op.op_type == "sanjna_substitute" and op.substitute == "guna"):
+            if right and right[0] in {'i', 'I'}:
+                return left[:-1] + 'e', right[1:]
+            elif right and right[0] in {'u', 'U'}:
+                return left[:-1] + 'o', right[1:]
+            elif right and right[0] in {'f', 'F'}:
+                return left[:-1] + 'ar', right[1:]
+            return left[:-1] + 'e', right[1:] if right else right
+
+        elif self.sutra_id == "6.1.88" or (op.op_type == "sanjna_substitute" and op.substitute == "vriddhi"):
+            if right and right[0] in {'e', 'E'}:
+                return left[:-1] + 'E', right[1:]
+            elif right and right[0] in {'o', 'O'}:
+                return left[:-1] + 'O', right[1:]
+            return left[:-1] + 'E', right[1:] if right else right
 
         elif op.op_type in {"bijection_substitute", "substitute"}:
             t_prat = self.spec.target_context.pratyahara
@@ -84,7 +109,6 @@ class CompiledVidhiRule(PaniniRule):
                     s_list = PratyaharaResolver.resolve_list(s_prat)
                     if len(t_list) == len(s_list):
                         fwd_map = dict(zip(t_list, s_list))
-                        # Expand short/long savarna pairs for vowels
                         savarna = {'A': 'a', 'I': 'i', 'U': 'u', 'F': 'f'}
                         lookup = fwd_map.get(l_char) or fwd_map.get(savarna.get(l_char, ''))
                         if lookup:
@@ -102,7 +126,49 @@ class CompiledVidhiRule(PaniniRule):
         if not combined_surface:
             return splits
 
-        if op.op_type in {"bijection_substitute", "substitute"}:
+        # 1. Ekādeśa Savarṇa-Dīrgha Reversion (6.1.101)
+        if self.sutra_id == "6.1.101" or op.op_type == "merge_savarna" or op.substitute == "dirgha":
+            d_pairs = [('A', ['a', 'A']), ('I', ['i', 'I']), ('U', ['u', 'U'])]
+            for char, targets in d_pairs:
+                idx = combined_surface.find(char)
+                while idx > 0:
+                    for l_c in targets:
+                        for r_c in targets:
+                            splits.append((combined_surface[:idx] + l_c, r_c + combined_surface[idx+1:]))
+                    idx = combined_surface.find(char, idx + 1)
+
+        # 2. Guṇa Ekādeśa Reversion (6.1.87)
+        elif self.sutra_id == "6.1.87" or (op.op_type == "sanjna_substitute" and op.substitute == "guna"):
+            for idx, char in enumerate(combined_surface):
+                if idx == 0: continue
+                if char == 'e':
+                    for l_c in ['a', 'A']:
+                        for r_c in ['i', 'I']:
+                            splits.append((combined_surface[:idx] + l_c, r_c + combined_surface[idx+1:]))
+                elif char == 'o':
+                    for l_c in ['a', 'A']:
+                        for r_c in ['u', 'U']:
+                            splits.append((combined_surface[:idx] + l_c, r_c + combined_surface[idx+1:]))
+                elif char == 'r' and combined_surface[idx-1] == 'a':
+                    for l_c in ['a', 'A']:
+                        for r_c in ['f', 'F']:
+                            splits.append((combined_surface[:idx-1] + l_c, r_c + combined_surface[idx+1:]))
+
+        # 3. Vṛddhi Ekādeśa Reversion (6.1.88)
+        elif self.sutra_id == "6.1.88" or (op.op_type == "sanjna_substitute" and op.substitute == "vriddhi"):
+            for idx, char in enumerate(combined_surface):
+                if idx == 0: continue
+                if char == 'E':
+                    for l_c in ['a', 'A']:
+                        for r_c in ['e', 'E']:
+                            splits.append((combined_surface[:idx] + l_c, r_c + combined_surface[idx+1:]))
+                elif char == 'O':
+                    for l_c in ['a', 'A']:
+                        for r_c in ['o', 'O']:
+                            splits.append((combined_surface[:idx] + l_c, r_c + combined_surface[idx+1:]))
+
+        # 4. Pratyāhāra Bijection Reversion (e.g. Yaṇ 6.1.77)
+        elif op.op_type in {"bijection_substitute", "substitute"}:
             t_prat = self.spec.target_context.pratyahara
             s_prat = op.substitute
             if t_prat and s_prat:
@@ -115,15 +181,16 @@ class CompiledVidhiRule(PaniniRule):
                         for s_char, t_char in bwd_map.items():
                             targets = savarna_long.get(t_char, [t_char])
                             idx = combined_surface.find(s_char)
-                            while idx != -1 and idx + 1 < len(combined_surface):
+                            while idx > 0:
                                 r_part = combined_surface[idx+len(s_char):]
-                                for tc in targets:
-                                    l_part = combined_surface[:idx] + tc
-                                    splits.append((l_part, r_part))
+                                # Only valid if followed by vowel
+                                if r_part and PratyaharaResolver.contains("aC", r_part[0]):
+                                    for tc in targets:
+                                        splits.append((combined_surface[:idx] + tc, r_part))
                                 idx = combined_surface.find(s_char, idx + 1)
                 except Exception:
                     pass
-        return splits
+        return list(set(splits))
 
 
 class MasterCompilerPipeline:
