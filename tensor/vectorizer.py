@@ -20,20 +20,6 @@ class TensorVectorizer:
         if not text:
             return []
 
-        # Exact verbal matching prototype for core verification tests
-        if text == "bhavati":
-            return [TensorCoordinate([1001, 2, 0, 0, 0, 1, 1, 3, 1, 0, 0])]
-
-        # Exact subanta matching prototype for core verification tests
-        if text == "īśaḥ":
-            return [TensorCoordinate([2002, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1])]
-
-        # Sandhi split compound matching prototype ('rāmeśaḥ')
-        if text == "rāmeśaḥ":
-            t1 = TensorCoordinate([2001, 1, 0, 0, 0, 0, 0, 0, 1, 0, 1])
-            t2 = TensorCoordinate([2002, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1])
-            return [t1, t2]
-
         # Spaced multi-word sentence fallback
         if " " in text:
             vecs = []
