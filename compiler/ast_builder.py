@@ -63,26 +63,33 @@ class SutraAstBuilder:
 
             # 4. Substitute / Operation (Nominative / 1st case)
             elif t.is_substitute:
-                if "lopa" in slp.lower() or "adarSana" in slp.lower():
+                norm = slp[:-1] if slp.endswith(("s", "H")) else slp
+                if norm in {"lopa", "adarSana"}:
                     op_type = "elide"
-                    sub_val = ""
-                elif "dIrGa" in slp or "guRa" in slp or "vfddhi" in slp.lower() or "vfdDi" in slp:
-                    op_type = "merge_sandhi"
-                    if "dIrGa" in slp: sub_val = "dirgha"
-                    elif "guRa" in slp: sub_val = "guna"
-                    else: sub_val = "vriddhi"
+                    sub_val = None
+                elif norm in {"guRa", "guRa-vfdDI"}:
+                    op_type = "sanjna_substitute"
+                    sub_val = "guna"
+                elif norm in {"vfdDi", "vfddhi"}:
+                    op_type = "sanjna_substitute"
+                    sub_val = "vriddhi"
+                elif norm == "dIrGa":
+                    op_type = "merge_savarna" if right_cond else "dirgha"
+                    sub_val = "dirgha"
+                elif slp in PRATYAHARA_STEMS or norm in PRATYAHARA_STEMS:
+                    op_type = "bijection_substitute"
+                    sub_val = PRATYAHARA_STEMS.get(slp, PRATYAHARA_STEMS.get(norm, slp))
+                elif norm in {"yaR", "jaS", "Scu", "ac", "hal"}:
+                    op_type = "bijection_substitute"
+                    sub_val = norm
                 else:
-                    op_type = "substitute"
-                    # E.g. yaR, ay, av, H, ru
-                    if slp == "yaR": sub_val = "yan"
-                    elif slp in {"H", "visargaH"}: sub_val = "H"
-                    else: sub_val = slp
+                    op_type = "exact_substitute"
+                    sub_val = "H" if norm in {"visarga", "H"} else slp
 
         if not has_target:
-            # Default target to any vowel if unspecified in starter rules
             target_cond.pratyahara = "aC"
 
-        op_spec = OperationSpec(op_type=op_type, substitute=sub_val if op_type != "elide" else None)
+        op_spec = OperationSpec(op_type=op_type, substitute=sub_val)
 
         domain = "sapada"
         # Tripādī boundary: 8.2.1 onwards

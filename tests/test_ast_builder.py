@@ -18,8 +18,8 @@ def test_build_iko_yan_aci():
     assert rule.id == "6.1.77"
     assert rule.target_context.pratyahara == "iK"
     assert rule.right_context.pratyahara == "aC"
-    assert rule.operation.op_type == "substitute"
-    assert rule.operation.substitute == "yan"
+    assert rule.operation.op_type == "bijection_substitute"
+    assert rule.operation.substitute == "yaR"
     assert rule.governance["domain"] == "sapada"
 
 
