@@ -33,13 +33,15 @@ class UniversalRuleEngine:
         def _sort_key(r: PaniniRule) -> int:
             op_type = getattr(getattr(r, "spec", None), "operation", None)
             op_name = getattr(op_type, "op_type", "") if op_type else ""
-            if op_name in {"ekadesha_savarna_dirgha", "ekadesha_vriddhi"}:
+            if op_name in {"ekadesha_savarna_dirgha", "ekadesha_vriddhi", "merge_savarna"}:
                 return 0
             if op_name == "ekadesha_guna":
                 return 1
-            if r.sutra_id.startswith(("6.1.", "8.2.", "8.3.", "8.4.", "7.2.")):
+            if op_name == "bijection_substitute":
                 return 2
-            return 3
+            if r.sutra_id.startswith(("6.1.", "8.2.", "8.3.", "8.4.", "7.2.")):
+                return 3
+            return 4
 
         return sorted(self._rules, key=_sort_key)
 

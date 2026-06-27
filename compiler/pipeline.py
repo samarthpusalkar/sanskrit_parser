@@ -58,16 +58,25 @@ class CompiledVidhiRule(PaniniRule):
                 return False
 
         # 2. Check Right Context (right start)
-        rgt = self.spec.right_context
-        if rgt:
-            if rgt.pratyahara:
-                if not PratyaharaResolver.contains(rgt.pratyahara, r_char):
-                    return False
-            elif rgt.exact_text and rgt.exact_text not in {"savarR", "ac"}:
-                allowed = set(rgt.exact_text.split(","))
-                if r_char not in allowed and right != rgt.exact_text:
-                    return False
+        if not self._is_valid_right_context(right):
+            return False
 
+        return True
+
+    def _is_valid_right_context(self, right_str: str) -> bool:
+        rgt = self.spec.right_context
+        if not rgt:
+            return True
+        if not right_str:
+            return False
+        r_char = right_str[0]
+        if rgt.pratyahara:
+            return PratyaharaResolver.contains(rgt.pratyahara, r_char)
+        elif rgt.exact_text:
+            if rgt.exact_text.lower() in {"savarr", "ac"}:
+                return PratyaharaResolver.contains("aC", r_char)
+            allowed = set(rgt.exact_text.split(","))
+            return r_char in allowed or right_str.startswith(rgt.exact_text)
         return True
 
     def apply(self, left: str, right: str, grammatical_context: Dict[str, Any]) -> Tuple[str, str]:
@@ -100,7 +109,7 @@ class CompiledVidhiRule(PaniniRule):
                 return left[:-1] + 'O', right[1:]
             return left[:-1] + 'E', right[1:] if right else right
 
-        elif op.op_type in {"bijection_substitute", "substitute"}:
+        elif op.op_type in {"bijection_substitute", "substitute", "exact_substitute"}:
             t_prat = self.spec.target_context.pratyahara
             s_prat = op.substitute
             if t_prat and s_prat:
@@ -116,6 +125,12 @@ class CompiledVidhiRule(PaniniRule):
                 except Exception:
                     pass
             if op.substitute and op.substitute not in {"dirgha", "guna", "vriddhi"}:
+                t_exact = self.spec.target_context.exact_text
+                if t_exact:
+                    allowed = [t.strip() for t in t_exact.split(",") if t.strip()]
+                    for a in allowed:
+                        if left.endswith(a):
+                            return left[:-len(a)] + op.substitute, right
                 return left[:-1] + op.substitute, right
 
         return left, right
@@ -131,10 +146,11 @@ class CompiledVidhiRule(PaniniRule):
             d_pairs = [('A', ['a', 'A']), ('I', ['i', 'I']), ('U', ['u', 'U'])]
             for char, targets in d_pairs:
                 idx = combined_surface.find(char)
-                while idx > 0:
-                    for l_c in targets:
-                        for r_c in targets:
-                            splits.append((combined_surface[:idx] + l_c, r_c + combined_surface[idx+1:]))
+                while idx != -1:
+                    if idx > 0:
+                        for l_c in targets:
+                            for r_c in targets:
+                                splits.append((combined_surface[:idx] + l_c, r_c + combined_surface[idx+1:]))
                     idx = combined_surface.find(char, idx + 1)
 
         # 2. Guṇa Ekādeśa Reversion
@@ -167,29 +183,52 @@ class CompiledVidhiRule(PaniniRule):
                         for r_c in ['o', 'O']:
                             splits.append((combined_surface[:idx] + l_c, r_c + combined_surface[idx+1:]))
 
-        # 4. Pratyāhāra Bijection Reversion (e.g. Yaṇ 6.1.77)
-        elif op.op_type in {"bijection_substitute", "substitute"}:
+        # 4. Pratyāhāra Bijection Reversion (e.g. Yaṇ 6.1.77) and Exact Substitutions
+        elif op.op_type in {"bijection_substitute", "substitute", "exact_substitute"}:
             t_prat = self.spec.target_context.pratyahara
             s_prat = op.substitute
+            handled = False
             if t_prat and s_prat:
                 try:
                     t_list = PratyaharaResolver.resolve_list(t_prat)
                     s_list = PratyaharaResolver.resolve_list(s_prat)
                     if len(t_list) == len(s_list):
+                        handled = True
                         bwd_map = dict(zip(s_list, t_list))
                         savarna_long = {'i': ['i', 'I'], 'u': ['u', 'U'], 'f': ['f', 'F'], 'a': ['a', 'A']}
                         for s_char, t_char in bwd_map.items():
                             targets = savarna_long.get(t_char, [t_char])
                             idx = combined_surface.find(s_char)
-                            while idx > 0:
-                                r_part = combined_surface[idx+len(s_char):]
-                                # Only valid if followed by vowel
-                                if r_part and PratyaharaResolver.contains("aC", r_part[0]):
-                                    for tc in targets:
-                                        splits.append((combined_surface[:idx] + tc, r_part))
+                            while idx != -1:
+                                if idx > 0:
+                                    r_part = combined_surface[idx+len(s_char):]
+                                    if self._is_valid_right_context(r_part):
+                                        for tc in targets:
+                                            splits.append((combined_surface[:idx] + tc, r_part))
                                 idx = combined_surface.find(s_char, idx + 1)
                 except Exception:
                     pass
+            if not handled and op.substitute and op.substitute not in {"dirgha", "guna", "vriddhi"}:
+                sub_str = op.substitute
+                targets = []
+                if self.spec.target_context.exact_text:
+                    targets = [t.strip() for t in self.spec.target_context.exact_text.split(",") if t.strip()]
+                elif self.spec.target_context.pratyahara:
+                    try:
+                        targets = PratyaharaResolver.resolve_list(self.spec.target_context.pratyahara)
+                    except Exception:
+                        pass
+                if not targets:
+                    targets = [sub_str]
+                idx = combined_surface.find(sub_str)
+                while idx != -1:
+                    if idx > 0:
+                        r_part = combined_surface[idx+len(sub_str):]
+                        if self._is_valid_right_context(r_part):
+                            for tc in targets:
+                                splits.append((combined_surface[:idx] + tc, r_part))
+                    idx = combined_surface.find(sub_str, idx + 1)
+
         return list(set(splits))
 
 
