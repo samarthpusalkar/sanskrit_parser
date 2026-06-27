@@ -18,12 +18,12 @@ class DeterministicSutraParser:
     """Parses sūtras deterministically into PrimitiveOp-backed RuleSpec objects."""
 
     @classmethod
-    def parse(cls, sutra_id: str, sutra_name: str, pada_cheda_str: str, priority: int = 100) -> RuleSpec:
+    def parse(cls, sutra_id: str, sutra_name: str, pada_cheda_str: str, priority: int = 100, sutra_type: str = "V") -> RuleSpec:
         tokens = PadaChedaParser.parse(pada_cheda_str)
-        if not tokens:
-            # Fallback for empty pada_cheda
+        cat_prefix = sutra_type.split('$')[0] if sutra_type and '$' in sutra_type else (sutra_type[:2] if sutra_type else 'V')
+        if not tokens or cat_prefix in ('S', 'P', 'AD', 'AT'):
             op = PrimitiveOp(left_consume=0, right_consume=0, emit="", emit_side="left", compute_fn=None, substitute="", op_type="non_operational")
-            return RuleSpec(id=sutra_id, name=sutra_name, rule_type="vidhi_sandhi", priority=priority, operation=op, governance={"domain": "sapada"})
+            return RuleSpec(id=sutra_id, name=sutra_name, rule_type="vidhi_sandhi", priority=priority, target_context=ConditionSpec(), operation=op, governance={"domain": "sapada"})
 
         target_cond = ConditionSpec()
         right_cond = None

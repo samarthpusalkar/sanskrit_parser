@@ -14,7 +14,7 @@ from compiler.ast_builder import SutraAstBuilder
 from rule_engine.dsl import RuleSpec, PrimitiveOp
 from rules.base import PaniniRule
 from core.shiva_sutras import PratyaharaResolver
-from core.phonology import SHORT_VOWELS, VOWELS, CONSONANTS, SAVARNA_LONG, compute_ekadesha, apply_natva, apply_shatva
+from core.phonology import SHORT_VOWELS, LONG_VOWELS, VOWELS, CONSONANTS, SAVARNA_LONG, compute_ekadesha, apply_natva, apply_shatva
 
 
 
@@ -25,6 +25,7 @@ SYMBOLIC_CLASSES = {
     "VOWEL": VOWELS,
     "VOWEL_NON_A": VOWELS - {'a', 'A'},
     "SHORT_VOWEL": SHORT_VOWELS,
+    "LONG_VOWEL": LONG_VOWELS,
     "CONSONANT": CONSONANTS,
     "STOP": set("kKgGNcCjJYwWqQRtTdDnpPbBm"),
     "NASAL": _yam_prat,
@@ -103,12 +104,24 @@ class CompiledVidhiRule(PaniniRule):
 
         if not self.spec.target_context.pratyahara and not self.spec.target_context.exact_text and prim.op_type != "governance":
             return False
-        if not self._is_config_target_match(left, l_char):
-            return False
-        if self.spec.left_context and not self._is_config_condition_match(self.spec.left_context, left, left[:-1][-1] if len(left) > 1 else left[-1]):
-            return False
-        if not self._is_valid_right_context(right):
-            return False
+        if prim.emit_side == "right":
+            t_cond = self.spec.target_context
+            if t_cond:
+                if t_cond.pratyahara and not PratyaharaResolver.contains(t_cond.pratyahara, right[0]):
+                    return False
+                elif t_cond.exact_text:
+                    parts = [p.strip() for p in t_cond.exact_text.split("|") if p.strip()]
+                    if not any(right.startswith(p) or _symbolic_match(p, right[0]) for p in parts):
+                        return False
+            if self.spec.left_context and not self._is_config_condition_match(self.spec.left_context, left, l_char):
+                return False
+        else:
+            if not self._is_config_target_match(left, l_char):
+                return False
+            if self.spec.left_context and not self._is_config_condition_match(self.spec.left_context, left, left[:-1][-1] if len(left) > 1 else left[-1]):
+                return False
+            if not self._is_valid_right_context(right):
+                return False
         # savarna_long needs a vowel at left[-2]
         if prim.compute_fn == "savarna_long":
             return len(left) >= 2 and left[-2] in SHORT_VOWELS
@@ -241,7 +254,7 @@ class CompiledVidhiRule(PaniniRule):
                 # Bijection on right boundary char
                 if len(t_list) == len(s_list):
                     fwd_map = dict(zip(t_list, s_list))
-                    return fwd_map.get(l_char)
+                    return fwd_map.get(right[0])
                 return None
 
             # Bijection on left boundary char

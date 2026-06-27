@@ -25,7 +25,7 @@ class SandhiEngine:
         if res_l and res_r:
             if PratyaharaResolver.contains("aC", res_l[-1]) and PratyaharaResolver.contains("aC", res_r[0]):
                 return res_l + " " + res_r
-            if w1[-1] in VISARGA_ALLOPHONES and PratyaharaResolver.contains("aC", res_l[-1]) and not res_r.startswith('r') and not res_r.startswith("'"):
+            if w1[-1] in VISARGA_ALLOPHONES and PratyaharaResolver.contains("aC", res_l[-1]) and PratyaharaResolver.contains("aC", res_r[0]) and not res_r.startswith('r') and not res_r.startswith("'"):
                 return res_l + " " + res_r
         return res_l + res_r
 
