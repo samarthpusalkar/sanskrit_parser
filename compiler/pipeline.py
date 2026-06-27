@@ -14,6 +14,28 @@ from compiler.ast_builder import SutraAstBuilder
 from rule_engine.dsl import RuleSpec
 from rules.base import PaniniRule
 from core.shiva_sutras import PratyaharaResolver
+from core.phonology import SHORT_VOWELS, VOWELS, CONSONANTS
+
+
+VOICED_EQUIVALENTS = {
+    'k': 'g', 'K': 'G', 'c': 'j', 'C': 'J', 'w': 'q', 'W': 'Q',
+    't': 'd', 'T': 'D', 'p': 'b', 'P': 'B',
+    'S': 'j', 'z': 'q', 's': 'd', 'h': 'g',
+}
+
+NASAL_BY_STHANA = {
+    'k': 'N', 'K': 'N', 'g': 'N', 'G': 'N', 'N': 'N',
+    'c': 'Y', 'C': 'Y', 'j': 'Y', 'J': 'Y', 'Y': 'Y', 'S': 'Y',
+    'w': 'R', 'W': 'R', 'q': 'R', 'Q': 'R', 'R': 'R', 'z': 'R',
+    't': 'n', 'T': 'n', 'd': 'n', 'D': 'n', 'n': 'n', 's': 'n',
+    'p': 'm', 'P': 'm', 'b': 'm', 'B': 'm', 'm': 'm',
+}
+
+SCU_EQUIVALENTS = {
+    's': 'S', 't': 'c', 'T': 'C', 'd': 'j', 'D': 'J', 'n': 'Y',
+}
+
+SCU_TRIGGERS = set(SCU_EQUIVALENTS.values()) | {'S'}
 
 
 class CompiledVidhiRule(PaniniRule):
@@ -54,6 +76,44 @@ class CompiledVidhiRule(PaniniRule):
                 return False
             return True
 
+        if op.op_type == "tuk_augment":
+            return l_char in SHORT_VOWELS and right.startswith("C")
+
+        if op.op_type == "purva_rupa":
+            return l_char in {'e', 'o'} and right.startswith('a')
+
+        if op.op_type == "visarga_utva":
+            return left.endswith("aH") and right.startswith('a')
+
+        if op.op_type == "jhalam_jasho":
+            return l_char in VOICED_EQUIVALENTS and (
+                r_char in VOWELS or r_char in {'y', 'r', 'l', 'v'} or r_char in {'g', 'G', 'j', 'J', 'q', 'Q', 'd', 'D', 'b', 'B'}
+            )
+
+        if op.op_type == "ro_ri_dirgha":
+            return l_char == 'r' and right.startswith('r') and len(left) >= 2 and left[-2] in SHORT_VOWELS
+
+        if op.op_type == "anusvara":
+            return l_char == 'm' and r_char in CONSONANTS
+
+        if op.op_type == "parasavarna":
+            return l_char == 'M' and r_char in CONSONANTS
+
+        if op.op_type == "stoh_scuna":
+            return l_char in SCU_EQUIVALENTS and r_char in SCU_TRIGGERS
+
+        if op.op_type == "yar_anunasika":
+            return l_char in CONSONANTS and r_char in {'N', 'Y', 'R', 'n', 'm'}
+
+        if op.op_type == "shashcho_ti":
+            return l_char in {'c', 'C'} and r_char == 'S'
+
+        if op.op_type == "natva":
+            return right.startswith('n') and any(c in {'r', 'z', 'R'} for c in left)
+
+        if op.op_type == "internal_only":
+            return False
+
         # 1. Check Target Context (left ending)
         tgt = self.spec.target_context
         if tgt.pratyahara:
@@ -65,7 +125,12 @@ class CompiledVidhiRule(PaniniRule):
                 return False
 
         # 2. Check Right Context (right start)
-        if right and not self.spec.right_context and not self.spec.operation.op_type.startswith("ekadesha"):
+        phonological_ops = {
+            "tuk_augment", "purva_rupa", "visarga_utva", "jhalam_jasho",
+            "ro_ri_dirgha", "anusvara", "parasavarna", "stoh_scuna",
+            "yar_anunasika", "shashcho_ti", "natva", "internal_only",
+        }
+        if right and not self.spec.right_context and not self.spec.operation.op_type.startswith("ekadesha") and self.spec.operation.op_type not in phonological_ops:
             return False
         if not self._is_valid_right_context(right):
             return False
@@ -130,12 +195,24 @@ class CompiledVidhiRule(PaniniRule):
                 try:
                     t_list = PratyaharaResolver.resolve_list(t_prat)
                     s_list = PratyaharaResolver.resolve_list(s_prat)
+                    savarna = {'A': 'a', 'I': 'i', 'U': 'u', 'F': 'f'}
+                    lookup = None
+                    
                     if len(t_list) == len(s_list):
                         fwd_map = dict(zip(t_list, s_list))
-                        savarna = {'A': 'a', 'I': 'i', 'U': 'u', 'F': 'f'}
                         lookup = fwd_map.get(l_char) or fwd_map.get(savarna.get(l_char, ''))
-                        if lookup:
-                            return left[:-1] + lookup, right
+                    else:
+                        from core.phonology import get_sthana
+                        search_char = savarna.get(l_char, l_char)
+                        if search_char in t_list:
+                            target_sthana = get_sthana(search_char)
+                            for cand in s_list:
+                                if get_sthana(cand) == target_sthana:
+                                    lookup = cand
+                                    break
+                                    
+                    if lookup:
+                        return left[:-1] + lookup, right
                 except Exception:
                     pass
             if op.substitute and op.substitute not in {"dirgha", "guna", "vriddhi"}:
@@ -147,6 +224,40 @@ class CompiledVidhiRule(PaniniRule):
                             return left[:-len(a)] + op.substitute, right
                     return left, right
                 return left[:-1] + op.substitute, right
+
+        elif op.op_type == "tuk_augment":
+            return left + 'c', right
+
+        elif op.op_type == "purva_rupa":
+            return left, "'" + right[1:]
+
+        elif op.op_type == "visarga_utva":
+            return left[:-2] + 'o', "'" + right[1:]
+
+        elif op.op_type == "jhalam_jasho":
+            return left[:-1] + VOICED_EQUIVALENTS.get(l_char, l_char), right
+
+        elif op.op_type == "ro_ri_dirgha":
+            from core.phonology import SAVARNA_LONG
+            return left[:-2] + SAVARNA_LONG.get(left[-2], left[-2]), right
+
+        elif op.op_type == "anusvara":
+            return left[:-1] + 'M', right
+
+        elif op.op_type == "parasavarna":
+            return left[:-1] + NASAL_BY_STHANA.get(right[0], 'M'), right
+
+        elif op.op_type == "stoh_scuna":
+            return left[:-1] + SCU_EQUIVALENTS.get(l_char, l_char), right
+
+        elif op.op_type == "yar_anunasika":
+            return left[:-1] + NASAL_BY_STHANA.get(right[0], right[0]), right
+
+        elif op.op_type == "shashcho_ti":
+            return left, 'C' + right[1:]
+
+        elif op.op_type == "natva":
+            return left, 'R' + right[1:]
 
         return left, right
 
