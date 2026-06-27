@@ -81,29 +81,27 @@ class UniversalLemmatizer:
         if token in {'aham', 'ahaṃ', 'ahañ', 'mām', 'mayā', 'mahyam', 'mat', 'mama', 'mayi'}: return 'asmad'
         if token in {'tvam', 'tvaṃ', 'tvām', 'tvayā', 'tubhyam', 'tvat', 'tava', 'te', 'tvayi', 'yūyam', 'yuṣmān'}: return 'yuṣmad'
         if token in {'amī', 'asau', 'amum', 'adas'}: return 'adas'
-        if token in {'vāk', 'vācā'}: return 'vāk'
-        if token in {'pum', 'pumān'}: return 'pums'
-        if token in {'mātā', 'mātaram'}: return 'mātṛ'
-        if token in {'pitarau', 'pitā'}: return 'pitṛ'
-        if token in {'bhrātaḥ', 'bhrātā'}: return 'bhrātṛ'
-        if token in {'akṣī', 'akṣaṇi'}: return 'akṣan'
-        if token in {'karmaṇi'}: return 'karman'
-        if token in {'akarmaṇi'}: return 'akarman'
-        if token in {'dhāvat'}: return 'dhāv'
-        if token in {'arthau'}: return 'artha'
-        if token in {'kṣetrajñayoḥ'}: return 'kṣetrajña'
-        if token in {'vaṭyām'}: return 'vaṭī'
-        if token in {'gacchati', 'gacchanti'}: return 'gam'
-        if token in {'karoti'}: return 'kṛ'
-        if token in {'carāmi'}: return 'car'
-        if token in {'śrutvā', 'śrotavyam'}: return 'śru'
-        if token in {'asti', 'asi', 'āsīt', 'astu'}: return 'as'
-        if token in {'eti'}: return 'i'
-        if token in {'bhavati'}: return 'bhū'
-        if token in {'pañca', 'pañcan'}: return 'pañcan'
-        if token in {'mahā', 'mahat'}: return 'mahat'
-        if token in {'namaḥ', 'namo', 'namas'}: return 'namas'
-        if token in {'aśvā', 'aśva'}: return 'aśva'
+        # 2. Algorithmic detachment for consonant stems (ṛ-stems, n-stems, s-stems, palatals)
+        if token.endswith("ā") or token.endswith("aram") or token.endswith("arau") or token.endswith("ātaḥ") or token.endswith("ātā"):
+            for suff in ["aram", "arau", "ātaḥ", "ātā", "ā"]:
+                if token.endswith(suff) and len(token) > len(suff) + 1:
+                    cand = token[:-len(suff)] + "ṛ"
+                    if cls._is_canonical_lemma(cand): return cand
+        if token.endswith("ī") or token.endswith("aṇi") or token.endswith("aṇaḥ") or token.endswith("an") or token.endswith("aṇi"):
+            for suff in ["aṇi", "aṇaḥ", "an", "ī"]:
+                if token.endswith(suff) and len(token) > len(suff) + 1:
+                    cand = token[:-len(suff)] + "an"
+                    if cls._is_canonical_lemma(cand): return cand
+        if token.endswith("ācā") or token.endswith("āk"):
+            for suff in ["ācā", "āk"]:
+                if token.endswith(suff) and len(token) > len(suff) + 1:
+                    cand = token[:-len(suff)] + "āk"
+                    if cls._is_canonical_lemma(cand): return cand
+        if token.endswith("aḥ") or token.endswith("o") or token.endswith("as"):
+            for suff in ["aḥ", "o", "as"]:
+                if token.endswith(suff) and len(token) > len(suff) + 1:
+                    cand = token[:-len(suff)] + "as"
+                    if cls._is_canonical_lemma(cand): return cand
 
         if cls._is_canonical_lemma(token):
             return token
@@ -116,7 +114,7 @@ class UniversalLemmatizer:
         if (token.endswith("ṃ") or token.endswith("m")) and len(token) > 2 and cls._is_canonical_lemma(token[:-1]):
             return token[:-1]
 
-        # 2. Verbal Tiṅanta & Kṛt algorithmic stripping
+        # 3. Verbal Tiṅanta & Kṛt algorithmic stripping
         tin_suffixes = ['anti', 'ati', 'āmi', 'ami', 'maḥ', 'si', 'nte', 'te', 't', 'tu', 'tvā', 'tavyam']
         for suff in tin_suffixes:
             if token.endswith(suff) and len(token) > len(suff) + 1:
@@ -135,7 +133,7 @@ class UniversalLemmatizer:
                 elif stem.endswith('ay'): candidates.append(stem[:-2] + 'i')
                 
                 for cand in candidates:
-                    if cls._is_canonical_lemma(cand) or cand in {'gam', 'kṛ', 'car', 'śru', 'as', 'i', 'bhū', 'dhāv'}:
+                    if cls._is_canonical_lemma(cand):
                         return cand
 
         # 3. Nominal Subanta suffix stripping
