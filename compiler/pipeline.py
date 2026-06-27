@@ -80,6 +80,11 @@ class CompiledVidhiRule(PaniniRule):
         return True
 
     def apply(self, left: str, right: str, grammatical_context: Dict[str, Any]) -> Tuple[str, str]:
+        res = self._apply_raw(left, right, grammatical_context)
+        from compiler.registries import ParibhasaRegistry
+        return ParibhasaRegistry.intercept_apply(self.spec, left, right, grammatical_context, res)
+
+    def _apply_raw(self, left: str, right: str, grammatical_context: Dict[str, Any]) -> Tuple[str, str]:
         if not left:
             return left, right
         op = self.spec.operation
@@ -229,7 +234,9 @@ class CompiledVidhiRule(PaniniRule):
                                 splits.append((combined_surface[:idx] + tc, r_part))
                     idx = combined_surface.find(sub_str, idx + 1)
 
-        return list(set(splits))
+        res_splits = list(set(splits))
+        from compiler.registries import ParibhasaRegistry
+        return ParibhasaRegistry.intercept_revert(self.spec, combined_surface, grammatical_context, res_splits)
 
 
 class MasterCompilerPipeline:
@@ -248,11 +255,27 @@ class MasterCompilerPipeline:
 
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
-        rows = cur.execute("SELECT id, sutra_slp1, pada_cheda FROM sutras WHERE pada_cheda != ''").fetchall()
+        rows = cur.execute("SELECT id, sutra_slp1, sutra_type, pada_cheda FROM sutras WHERE pada_cheda != ''").fetchall()
         conn.close()
 
+        from compiler.registries import SanjnaRegistry, ParibhasaRegistry
+        from compiler.anuvritti import AnuvrittiEngine
+
         compiled = []
-        for sid, slp, pc in rows:
+        anuvritti = AnuvrittiEngine.get_instance()
+        anuvritti.reset()
+
+        for sid, slp, stype, pc in rows:
+            stype = stype or ""
+            if stype.startswith("S$"):
+                SanjnaRegistry.register_sutra(sid, slp)
+                continue
+            elif stype.startswith("P$"):
+                ParibhasaRegistry.register_sutra(sid, slp)
+                continue
+            elif stype.startswith("AD$"):
+                continue
+
             tokens = PadaChedaParser.parse(pc)
             spec = SutraAstBuilder.build(sid, slp, tokens)
             rule = CompiledVidhiRule(spec)

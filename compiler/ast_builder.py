@@ -8,6 +8,9 @@ into executable formal generative RuleSpec AST predicates.
 from typing import List, Optional
 from compiler.pada_cheda import PadaToken
 from rule_engine.dsl import RuleSpec, ConditionSpec, OperationSpec
+from compiler.registries import SanjnaRegistry, AdhikaraContext
+from compiler.anuvritti import AnuvrittiEngine
+from compiler.exceptions import PaninianCompilationError
 
 
 # Classical Vibhakti stem to Pratyāhāra mappings
@@ -102,6 +105,8 @@ class SutraAstBuilder:
         sub_val = ""
 
         has_target = False
+        props = AdhikaraContext.get_active_properties(sutra_id)
+        is_ekadesha = props.get("single_replacement_for_both", False)
 
         for t in tokens:
             slp = t.slp1
@@ -135,7 +140,7 @@ class SutraAstBuilder:
                 else:
                     norm = slp[:-1] if slp.endswith(("s", "H", "t")) else slp
                     left_cond.exact_text = PANINIAN_META_TERMS.get(slp, PANINIAN_META_TERMS.get(norm, norm))
-                if sutra_id.startswith("6.1.") and not has_target:
+                if is_ekadesha and not has_target:
                     has_target = True
                     if prat:
                         target_cond.pratyahara = prat
@@ -154,14 +159,14 @@ class SutraAstBuilder:
                     op_type = "elide"
                     sub_val = None
                 elif norm in {"guRa", "guRa-vfdDI"}:
-                    op_type = "ekadesha_guna" if sutra_id.startswith("6.1.") else "sanjna_substitute"
+                    op_type = "ekadesha_guna" if is_ekadesha else "sanjna_substitute"
                     sub_val = "guna"
                 elif norm in {"vfdDi", "vfddhi"}:
-                    op_type = "ekadesha_vriddhi" if sutra_id.startswith("6.1.") else "sanjna_substitute"
+                    op_type = "ekadesha_vriddhi" if is_ekadesha else "sanjna_substitute"
                     sub_val = "vriddhi"
                 elif norm == "dIrGa":
                     is_savarna = any("savarR" in tok.slp1 for tok in tokens)
-                    if sutra_id.startswith("6.1.") and (right_cond or is_savarna or sutra_id == "6.1.101"):
+                    if is_ekadesha and (right_cond or is_savarna or sutra_id == "6.1.101"):
                         op_type = "ekadesha_savarna_dirgha"
                     else:
                         op_type = "merge_savarna" if right_cond else "dirgha"
@@ -175,20 +180,38 @@ class SutraAstBuilder:
                 elif slp in PANINIAN_META_TERMS or norm in PANINIAN_META_TERMS:
                     op_type = "exact_substitute"
                     sub_val = PANINIAN_META_TERMS.get(slp, PANINIAN_META_TERMS.get(norm))
+                elif SanjnaRegistry.is_sanjna(slp) or SanjnaRegistry.is_sanjna(norm):
+                    op_type = "sanjna_substitute"
+                    sub_val = slp if SanjnaRegistry.is_sanjna(slp) else norm
                 else:
                     op_type = "exact_substitute"
                     sub_val = slp
+
+        anuvritti = AnuvrittiEngine.get_instance()
 
         if (op_type in {"substitute", "exact_substitute"} and not sub_val) or sub_val == "":
             inh = cls._inherit_anuvritti_substitute(sutra_id)
             if inh:
                 op_type = "exact_substitute"
                 sub_val = inh
+            else:
+                inh_slots = anuvritti.get_inherited_slots(sutra_id)
+                inh_op = inh_slots.get("operation")
+                if inh_op and getattr(inh_op, "substitute", ""):
+                    op_type = inh_op.op_type
+                    sub_val = inh_op.substitute
 
         if not has_target:
-            target_cond.pratyahara = "aC"
+            inh_slots = anuvritti.get_inherited_slots(sutra_id)
+            inh_tgt = inh_slots.get("target")
+            if inh_tgt:
+                target_cond = inh_tgt
+                has_target = True
+            else:
+                target_cond.pratyahara = "aC"
 
         op_spec = OperationSpec(op_type=op_type, substitute=sub_val)
+        anuvritti.step(sutra_id, target_cond if has_target else None, left_cond, right_cond, op_spec)
 
         domain = "sapada"
         parts = sutra_id.split(".")

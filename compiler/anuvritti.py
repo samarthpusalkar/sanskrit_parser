@@ -1,55 +1,57 @@
 """
-Anuvṛtti Context Inheritance Engine.
+Sequential Stateful Anuvṛtti Engine.
 
-Resolves carried-over sūtra terms ('an') and governing headers ('ad')
-by querying the historical Pada-cheda tags of earlier sūtras.
+Maintains active grammatical context across sūtra boundaries during sequential ingestion.
+Enforces Pāṇinian blocking rules where new terms override inherited terms of the same Vibhakti case.
 """
 
-from typing import Dict, List
-from compiler.pada_cheda import PadaToken, PadaChedaParser
+from typing import Dict, Any, Optional
+from compiler.registries import AdhikaraContext
 
 
-class AnuvrittiResolver:
-    """Resolves carried over sūtra terms into active PadaToken lists."""
+class AnuvrittiEngine:
+    """Stateful engine tracking active AST conditions across sequential sūtras."""
 
-    def __init__(self, sutra_db: Dict[str, List[PadaToken]]):
-        """
-        :param sutra_db: Map of Sūtra ID (e.g. '11003') -> List[PadaToken]
-        """
-        self.sutra_db = sutra_db
+    _instance = None
 
-    def resolve(self, current_tokens: List[PadaToken], anuvritti_raw: str) -> List[PadaToken]:
-        """
-        Combines current sūtra tokens with carried over Anuvṛtti tokens.
-        If a carried over term exists in current_tokens (overridden), active sūtra wins.
-        """
-        active_tokens = list(current_tokens)
-        if not anuvritti_raw or anuvritti_raw.strip() == "":
-            return active_tokens
+    @classmethod
+    def get_instance(cls) -> 'AnuvrittiEngine':
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
 
-        # Parse anuvritti string e.g. "इकः$11003##गुण-वृद्धी$11003"
-        chunks = anuvritti_raw.split("##")
-        for chunk in chunks:
-            chunk = chunk.strip()
-            if not chunk or "$" not in chunk:
-                continue
+    def __init__(self):
+        self.reset()
 
-            parts = chunk.split("$")
-            word_surface = parts[0].strip()
-            source_id = parts[1].strip()
+    def reset(self):
+        self.active_target: Optional[Any] = None
+        self.active_left_context: Optional[Any] = None
+        self.active_right_context: Optional[Any] = None
+        self.active_operation: Optional[Any] = None
+        self.current_sutra_id: str = ""
 
-            # Look up word_surface in source sūtra's pada_cheda
-            source_tokens = self.sutra_db.get(source_id, [])
-            found_token = None
-            for t in source_tokens:
-                if t.devanagari == word_surface or word_surface in t.devanagari:
-                    found_token = t
-                    break
+    def step(self, sutra_id: str, target: Any, left: Any, right: Any, op: Any):
+        """Update active Anuvṛtti state upon ingesting a sūtra."""
+        self.current_sutra_id = sutra_id
 
-            if found_token:
-                # Check if current sūtra already specifies a token of the same case (Utsarga override)
-                case_exists = any(t.case == found_token.case for t in current_tokens if t.case in {1, 5, 6, 7})
-                if not case_exists:
-                    active_tokens.append(found_token)
+        # Check domain boundaries or Adhikāra resets
+        props = AdhikaraContext.get_active_properties(sutra_id)
 
-        return active_tokens
+        # Update slots if explicitly present in the new sūtra (blocking rule)
+        if target is not None:
+            self.active_target = target
+        if left is not None:
+            self.active_left_context = left
+        if right is not None:
+            self.active_right_context = right
+        if op is not None and getattr(op, "op_type", "") != "substitute" or getattr(op, "substitute", "") != "":
+            self.active_operation = op
+
+    def get_inherited_slots(self, sutra_id: str) -> Dict[str, Any]:
+        """Retrieve inherited AST slots for the current sūtra."""
+        return {
+            "target": self.active_target,
+            "left_context": self.active_left_context,
+            "right_context": self.active_right_context,
+            "operation": self.active_operation
+        }
