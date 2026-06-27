@@ -42,6 +42,7 @@ class Accent(Enum):
 SHORT_VOWELS = frozenset({'a', 'i', 'u', 'f', 'x'})  # a, i, u, ṛ, ḷ
 LONG_VOWELS = frozenset({'A', 'I', 'U', 'F', 'X', 'e', 'E', 'o', 'O'})
 VOWELS = SHORT_VOWELS | LONG_VOWELS
+VISARGA_ALLOPHONES = frozenset({'H', 'ḥ', 's'})
 
 # Guna and Vriddhi tables (SLP1)
 GUNA_MAP = {

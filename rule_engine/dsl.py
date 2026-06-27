@@ -16,6 +16,7 @@ class ConditionSpec:
     """Predicate condition matching on phonetic context or ancestry lineage."""
     pratyahara: Optional[str] = None           # e.g. 'iK', 'aC', 'haL'
     exact_text: Optional[str] = None           # e.g. 'gam', 'ha'
+    tokens_required: Optional[Set[str]] = None # e.g. {'pra', 'upa', 'ava'}
     tags_required: Set[str] = field(default_factory=set) # e.g. {'root'}
     features_required: Dict[str, Any] = field(default_factory=dict)
     it_required: Optional[str] = None

@@ -10,6 +10,7 @@ from tensor.schema import TensorCoordinate
 from tensor.vocab import TensorVocab
 from core.lemmatizer import UniversalLemmatizer
 from morphology.api import SanskritCompiler
+from core.shiva_sutras import PratyaharaResolver
 
 
 class TensorVectorizer:
@@ -86,7 +87,7 @@ class TensorVectorizer:
         if valid_candidates:
             def score_cand(cand: List[str]) -> Tuple[int, int, int, int, int]:
                 canon_chars = sum(len(w) for w in cand if UniversalLemmatizer._is_canonical_lemma(UniversalLemmatizer.lemmatize(w)))
-                short_stem_bonus = sum(1 for w in cand[:-1] if w.endswith(('a', 'i', 'u', 'ṛ', 'n', 't', 's', 'k', 'p', 'c', 'm')))
+                short_stem_bonus = sum(1 for w in cand[:-1] if w and PratyaharaResolver.contains("aL", w[-1]))
                 neg_tokens = -len(cand)
                 min_len = min(len(w) for w in cand) if cand else 0
                 canon_count = sum(1 for w in cand if UniversalLemmatizer._is_canonical_lemma(UniversalLemmatizer.lemmatize(w)))

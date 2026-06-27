@@ -19,6 +19,9 @@ try:
 except FileNotFoundError:
     forward_tests = []
 
+COMPOUND_GENERATION_TAGS = frozenset({"samāsa", "multi_stage_generation", "vibhakti_lopa"})
+
+
 def test_legacy_forward_sandhi():
     # Legacy hardcoded checks (SLP1 internal encoding)
     assert SandhiEngine.join("rAma", "ISa") == "rAmeSa"
@@ -28,7 +31,7 @@ def test_legacy_forward_sandhi():
 
 def test_backward_sandhi_split():
     splits = SandhiEngine.split("rAmeSa")
-    assert ("rAma", "ISa") in splits or ("rAmA", "ISa") in splits
+    assert any(s[0] == "rAma" and s[1] == "ISa" for s in splits)
 
 
 def test_api_wrapper():
@@ -45,7 +48,7 @@ def test_json_forward_sandhi(case):
     tokens = case["input_tokens"]
     expected = case["expected_string"]
     
-    is_samasa = "samāsa" in case.get("rule_tags", [])
+    is_samasa = bool(COMPOUND_GENERATION_TAGS.intersection(case.get("rule_tags", [])))
     
     # Process sequentially for multiple tokens
     actual = tokens[0]

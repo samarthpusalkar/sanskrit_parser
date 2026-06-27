@@ -18,15 +18,18 @@ from core.phonology import SHORT_VOWELS, VOWELS, CONSONANTS, compute_ekadesha, a
 
 
 
+_has_prat = set(PratyaharaResolver.resolve_list("haS"))
+_yam_prat = set(PratyaharaResolver.resolve_list("YaM"))
+
 SYMBOLIC_CLASSES = {
     "VOWEL": VOWELS,
     "VOWEL_NON_A": VOWELS - {'a', 'A'},
     "SHORT_VOWEL": SHORT_VOWELS,
     "CONSONANT": CONSONANTS,
     "STOP": set("kKgGNcCjJYwWqQRtTdDnpPbBm"),
-    "NASAL": set("NYRnm"),
-    "VOICED": set("gGjJqQdDbByrlv") | VOWELS,
-    "PAUSE_OR_VOICED": set("gGjJqQdDbByrlv") | VOWELS,
+    "NASAL": _yam_prat,
+    "VOICED": _has_prat | VOWELS,
+    "PAUSE_OR_VOICED": _has_prat | VOWELS,
 }
 
 
@@ -58,6 +61,9 @@ def _condition_from_config(pattern: str, match_pos: str) -> "ConditionSpec":
     from rule_engine.dsl import ConditionSpec
     if pattern.startswith("PRAT:"):
         return ConditionSpec(pratyahara=pattern.removeprefix("PRAT:"), match_pos=match_pos)
+    if pattern.startswith("TOKEN:"):
+        tokens = {p.strip() for p in pattern.removeprefix("TOKEN:").split("|") if p.strip()}
+        return ConditionSpec(tokens_required=tokens, match_pos=match_pos)
     return ConditionSpec(exact_text=pattern, match_pos=match_pos)
 
 
@@ -108,10 +114,14 @@ class CompiledVidhiRule(PaniniRule):
         if not text:
             return False
         char_to_check = text[0] if cond.match_pos == "start" else boundary_char
+        if getattr(cond, "tokens_required", None):
+            return text in cond.tokens_required
         if cond.pratyahara:
             return PratyaharaResolver.contains(cond.pratyahara, char_to_check)
         if cond.exact_text:
-            return text.endswith(cond.exact_text) or _symbolic_match(cond.exact_text, char_to_check)
+            if any(text.endswith(p.strip()) for p in cond.exact_text.split("|") if p.strip()):
+                return True
+            return _symbolic_match(cond.exact_text, char_to_check)
         return True
 
     def _is_valid_right_context(self, right_str: str) -> bool:
@@ -125,6 +135,8 @@ class CompiledVidhiRule(PaniniRule):
             return PratyaharaResolver.contains(rgt.pratyahara, r_char)
         elif rgt.exact_text:
             if _symbolic_match(rgt.exact_text, r_char):
+                return True
+            if any(right_str.startswith(p.strip()) for p in rgt.exact_text.split("|") if p.strip()):
                 return True
             if rgt.exact_text.lower() in {"savarr", "ac"}:
                 return PratyaharaResolver.contains("aC", r_char)
@@ -230,6 +242,27 @@ class CompiledVidhiRule(PaniniRule):
 
         elif op.op_type == "right_substitute":
             return left, (op.substitute or "") + right[1:]
+
+        elif op.op_type == "bijection_right_substitute":
+            t_cond = self.spec.target_context
+            s_val = op.substitute
+            if t_cond and s_val:
+                try:
+                    if t_cond.pratyahara:
+                        t_list = PratyaharaResolver.resolve_list(t_cond.pratyahara)
+                    else:
+                        t_list = _expand_literal_pattern(t_cond.exact_text)
+                    if s_val.startswith("PRAT:"):
+                        s_list = PratyaharaResolver.resolve_list(s_val.removeprefix("PRAT:"))
+                    else:
+                        s_list = _expand_literal_pattern(s_val)
+                    if len(t_list) == len(s_list):
+                        fwd_map = dict(zip(t_list, s_list))
+                        lookup = fwd_map.get(l_char)
+                        if lookup:
+                            return left, lookup + right[1:]
+                except Exception:
+                    pass
 
         elif op.op_type == "natva":
             res = apply_natva(left + right)

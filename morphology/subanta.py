@@ -106,6 +106,7 @@ class SubantaGenerator:
 
         # 2. Check if it's already a valid stem or root in Lexicon
         from data.lexicon import Lexicon
+        from core.shiva_sutras import PratyaharaResolver
         if Lexicon.is_valid_stem(inflected_slp1):
             return inflected_slp1
 
@@ -117,9 +118,9 @@ class SubantaGenerator:
                 if cand.endswith("A") and not Lexicon.is_valid_stem(cand):
                     # Try restoring short 'a' stem (e.g. rāmāt -> rāmā -> rāma)
                     cand_a = cand[:-1] + "a"
-                    if Lexicon.is_valid_stem(cand_a):
+                    if Lexicon.is_valid_stem(cand_a) or len(cand_a) >= 2:
                         return cand_a
-                if Lexicon.is_valid_stem(cand):
+                if Lexicon.is_valid_stem(cand) or PratyaharaResolver.contains("aC", cand[-1]):
                     return cand
 
         return inflected_slp1

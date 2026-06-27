@@ -21,8 +21,12 @@ class SandhiEngine:
         engine = UniversalRuleEngine.get_instance()
         res_l, res_r = engine.dispatch_forward(w1, w2)
         from core.shiva_sutras import PratyaharaResolver
-        if res_l and res_r and PratyaharaResolver.contains("aC", res_l[-1]) and PratyaharaResolver.contains("aC", res_r[0]):
-            return res_l + " " + res_r
+        from core.phonology import VISARGA_ALLOPHONES
+        if res_l and res_r:
+            if PratyaharaResolver.contains("aC", res_l[-1]) and PratyaharaResolver.contains("aC", res_r[0]):
+                return res_l + " " + res_r
+            if w1[-1] in VISARGA_ALLOPHONES and PratyaharaResolver.contains("aC", res_l[-1]) and not res_r.startswith('r'):
+                return res_l + " " + res_r
         return res_l + res_r
 
     @classmethod
