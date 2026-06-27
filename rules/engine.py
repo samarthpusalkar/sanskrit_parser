@@ -12,8 +12,11 @@ from rules.base import PaniniRule, VidhiRule
 class UniversalRuleEngine:
     """Master rule engine orchestrating grammatical transformations."""
 
-    def __init__(self):
+    def __init__(self, auto_compile: bool = True):
         self._rules: List[PaniniRule] = []
+        if auto_compile:
+            from compiler.pipeline import MasterCompilerPipeline
+            self._rules.extend(MasterCompilerPipeline.compile_all())
 
     def register_rule(self, rule: PaniniRule):
         self._rules.append(rule)
