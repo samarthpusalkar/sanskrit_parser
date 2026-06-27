@@ -8,6 +8,7 @@ from typing import List
 from tensor.schema import TensorCoordinate
 from tensor.vocab import TensorVocab
 from morphology.api import SanskritCompiler
+from core.lemmatizer import UniversalLemmatizer
 
 
 class TensorDetokenizer:
