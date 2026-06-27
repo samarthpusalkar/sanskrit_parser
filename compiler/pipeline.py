@@ -37,6 +37,46 @@ SCU_EQUIVALENTS = {
 
 SCU_TRIGGERS = set(SCU_EQUIVALENTS.values()) | {'S'}
 
+SYMBOLIC_CLASSES = {
+    "VOWEL": VOWELS,
+    "VOWEL_NON_A": VOWELS - {'a', 'A'},
+    "SHORT_VOWEL": SHORT_VOWELS,
+    "CONSONANT": CONSONANTS,
+    "STOP": set("kKgGNcCjJYwWqQRtTdDnpPbBm"),
+    "NASAL": set("NYRnm"),
+    "VOICED": set("gGjJqQdDbByrlv") | VOWELS,
+    "PAUSE_OR_VOICED": set("gGjJqQdDbByrlv") | VOWELS,
+}
+
+
+def _symbolic_match(pattern: str, value: str) -> bool:
+    if not pattern:
+        return True
+    for part in pattern.split("|"):
+        if not part:
+            continue
+        chars = SYMBOLIC_CLASSES.get(part)
+        if chars is not None:
+            if value in chars:
+                return True
+            continue
+        if value == part:
+            return True
+    return False
+
+
+def _expand_literal_pattern(pattern: str) -> List[str]:
+    if not pattern:
+        return []
+    if pattern in SYMBOLIC_CLASSES:
+        return sorted(SYMBOLIC_CLASSES[pattern])
+    return [part for part in pattern.split("|") if part and part not in SYMBOLIC_CLASSES]
+
+
+def _condition_from_config(pattern: str, match_pos: str) -> "ConditionSpec":
+    from rule_engine.dsl import ConditionSpec
+    return ConditionSpec(exact_text=pattern, match_pos=match_pos)
+
 
 class CompiledVidhiRule(PaniniRule):
     """Runtime executable rule object compiled from a formal RuleSpec AST."""
@@ -52,6 +92,25 @@ class CompiledVidhiRule(PaniniRule):
         op = self.spec.operation
         l_char = left[-1]
         r_char = right[0]
+        data_ops = {
+            "insert", "merge", "substitute", "voice", "nasalize", "palatalize", "purva_rupa",
+            "visarga_utva", "ro_ri_dirgha", "anusvara", "parasavarna",
+            "natva", "right_substitute", "external_block",
+        }
+
+        if op.op_type in data_ops and self.spec.governance.get("source") == "rule_configs":
+            if not self._is_config_target_match(left, l_char):
+                return False
+            if not self._is_valid_right_context(right):
+                return False
+            if op.op_type == "ro_ri_dirgha":
+                return len(left) >= 2 and left[-2] in SHORT_VOWELS
+            if op.op_type == "natva":
+                trigger = self.spec.left_context.exact_text if self.spec.left_context else "r|z|R"
+                return any(_symbolic_match(trigger, c) for c in left)
+            if op.op_type == "external_block":
+                return False
+            return True
 
         # Special handling for classical major Ekādeśa Sandhi sūtras via abstract op_type
         if op.op_type in {"ekadesha_savarna_dirgha", "merge_savarna"}:
@@ -59,60 +118,15 @@ class CompiledVidhiRule(PaniniRule):
             return any(l_char in g and r_char in g for g in savarna_groups)
 
         if op.op_type == "ekadesha_vriddhi":
-            if self.sutra_id == "6.1.91":
-                upasargas = {'pra', 'para', 'apa', 'sam', 'anu', 'ava', 'nis', 'nir', 'dus', 'dur', 'vi', 'A', 'ni', 'aDi', 'api', 'ati', 'su', 'ut', 'aBi', 'prati', 'pari', 'upa'}
-                return left in upasargas and r_char in {'f', 'F'}
-            if self.sutra_id != "6.1.88":
-                return False
             return l_char in {'a', 'A'} and PratyaharaResolver.contains("eC", r_char)
 
         if op.op_type == "ekadesha_guna":
-            if self.sutra_id != "6.1.87":
-                return False
             if l_char not in {'a', 'A'} or not PratyaharaResolver.contains("aC", r_char):
                 return False
             # Blocked if savarna or eC
             if r_char in {'a', 'A'} or PratyaharaResolver.contains("eC", r_char):
                 return False
             return True
-
-        if op.op_type == "tuk_augment":
-            return l_char in SHORT_VOWELS and right.startswith("C")
-
-        if op.op_type == "purva_rupa":
-            return l_char in {'e', 'o'} and right.startswith('a')
-
-        if op.op_type == "visarga_utva":
-            return left.endswith("aH") and right.startswith('a')
-
-        if op.op_type == "jhalam_jasho":
-            return l_char in VOICED_EQUIVALENTS and (
-                r_char in VOWELS or r_char in {'y', 'r', 'l', 'v'} or r_char in {'g', 'G', 'j', 'J', 'q', 'Q', 'd', 'D', 'b', 'B'}
-            )
-
-        if op.op_type == "ro_ri_dirgha":
-            return l_char == 'r' and right.startswith('r') and len(left) >= 2 and left[-2] in SHORT_VOWELS
-
-        if op.op_type == "anusvara":
-            return l_char == 'm' and r_char in CONSONANTS
-
-        if op.op_type == "parasavarna":
-            return l_char == 'M' and r_char in CONSONANTS
-
-        if op.op_type == "stoh_scuna":
-            return l_char in SCU_EQUIVALENTS and r_char in SCU_TRIGGERS
-
-        if op.op_type == "yar_anunasika":
-            return l_char in CONSONANTS and r_char in {'N', 'Y', 'R', 'n', 'm'}
-
-        if op.op_type == "shashcho_ti":
-            return l_char in {'c', 'C'} and r_char == 'S'
-
-        if op.op_type == "natva":
-            return right.startswith('n') and any(c in {'r', 'z', 'R'} for c in left)
-
-        if op.op_type == "internal_only":
-            return False
 
         # 1. Check Target Context (left ending)
         tgt = self.spec.target_context
@@ -126,15 +140,21 @@ class CompiledVidhiRule(PaniniRule):
 
         # 2. Check Right Context (right start)
         phonological_ops = {
-            "tuk_augment", "purva_rupa", "visarga_utva", "jhalam_jasho",
-            "ro_ri_dirgha", "anusvara", "parasavarna", "stoh_scuna",
-            "yar_anunasika", "shashcho_ti", "natva", "internal_only",
+            *data_ops,
         }
         if right and not self.spec.right_context and not self.spec.operation.op_type.startswith("ekadesha") and self.spec.operation.op_type not in phonological_ops:
             return False
         if not self._is_valid_right_context(right):
             return False
 
+        return True
+
+    def _is_config_target_match(self, left: str, l_char: str) -> bool:
+        tgt = self.spec.target_context
+        if tgt.pratyahara:
+            return PratyaharaResolver.contains(tgt.pratyahara, l_char)
+        if tgt.exact_text:
+            return left.endswith(tgt.exact_text) or _symbolic_match(tgt.exact_text, l_char)
         return True
 
     def _is_valid_right_context(self, right_str: str) -> bool:
@@ -147,6 +167,8 @@ class CompiledVidhiRule(PaniniRule):
         if rgt.pratyahara:
             return PratyaharaResolver.contains(rgt.pratyahara, r_char)
         elif rgt.exact_text:
+            if _symbolic_match(rgt.exact_text, r_char):
+                return True
             if rgt.exact_text.lower() in {"savarr", "ac"}:
                 return PratyaharaResolver.contains("aC", r_char)
             allowed = set(rgt.exact_text.split(","))
@@ -188,6 +210,9 @@ class CompiledVidhiRule(PaniniRule):
                 return left[:-1] + 'O', right[1:]
             return left[:-1] + 'E', right[1:] if right else right
 
+        elif op.op_type == "substitute" and self.spec.governance.get("source") == "rule_configs":
+            return left[:-1] + (op.substitute or ""), right
+
         elif op.op_type in {"bijection_substitute", "substitute", "exact_substitute"}:
             t_prat = self.spec.target_context.pratyahara
             s_prat = op.substitute
@@ -225,8 +250,11 @@ class CompiledVidhiRule(PaniniRule):
                     return left, right
                 return left[:-1] + op.substitute, right
 
-        elif op.op_type == "tuk_augment":
-            return left + 'c', right
+        elif op.op_type == "insert":
+            return left + (op.substitute or ""), right
+
+        elif op.op_type == "merge":
+            return left[:-1] + (op.substitute or ""), right[1:]
 
         elif op.op_type == "purva_rupa":
             return left, "'" + right[1:]
@@ -234,7 +262,7 @@ class CompiledVidhiRule(PaniniRule):
         elif op.op_type == "visarga_utva":
             return left[:-2] + 'o', "'" + right[1:]
 
-        elif op.op_type == "jhalam_jasho":
+        elif op.op_type == "voice":
             return left[:-1] + VOICED_EQUIVALENTS.get(l_char, l_char), right
 
         elif op.op_type == "ro_ri_dirgha":
@@ -247,14 +275,14 @@ class CompiledVidhiRule(PaniniRule):
         elif op.op_type == "parasavarna":
             return left[:-1] + NASAL_BY_STHANA.get(right[0], 'M'), right
 
-        elif op.op_type == "stoh_scuna":
+        elif op.op_type == "palatalize":
             return left[:-1] + SCU_EQUIVALENTS.get(l_char, l_char), right
 
-        elif op.op_type == "yar_anunasika":
+        elif op.op_type == "nasalize":
             return left[:-1] + NASAL_BY_STHANA.get(right[0], right[0]), right
 
-        elif op.op_type == "shashcho_ti":
-            return left, 'C' + right[1:]
+        elif op.op_type == "right_substitute":
+            return left, (op.substitute or "") + right[1:]
 
         elif op.op_type == "natva":
             return left, 'R' + right[1:]
@@ -266,6 +294,31 @@ class CompiledVidhiRule(PaniniRule):
         op = self.spec.operation
         if not combined_surface:
             return splits
+
+        if self.spec.governance.get("source") == "rule_configs":
+            if op.op_type == "merge" and op.substitute:
+                left_targets = _expand_literal_pattern(self.spec.target_context.exact_text or "")
+                right_targets = _expand_literal_pattern(self.spec.right_context.exact_text if self.spec.right_context else "")
+                idx = combined_surface.find(op.substitute)
+                while idx != -1:
+                    if idx > 0:
+                        for l_c in left_targets:
+                            for r_c in right_targets:
+                                splits.append((combined_surface[:idx] + l_c, r_c + combined_surface[idx+len(op.substitute):]))
+                    idx = combined_surface.find(op.substitute, idx + 1)
+            elif op.op_type == "substitute" and op.substitute:
+                targets = _expand_literal_pattern(self.spec.target_context.exact_text or "")
+                idx = combined_surface.find(op.substitute)
+                while idx != -1:
+                    if idx > 0:
+                        r_part = combined_surface[idx+len(op.substitute):]
+                        if self._is_valid_right_context(r_part):
+                            for target in targets:
+                                splits.append((combined_surface[:idx] + target, r_part))
+                    idx = combined_surface.find(op.substitute, idx + 1)
+            res_splits = list(set(splits))
+            from compiler.registries import ParibhasaRegistry
+            return ParibhasaRegistry.intercept_revert(self.spec, combined_surface, grammatical_context, res_splits)
 
         # 1. Ekādeśa Savarṇa-Dīrgha Reversion
         if op.op_type in {"ekadesha_savarna_dirgha", "merge_savarna"} or op.substitute == "dirgha":
@@ -360,6 +413,52 @@ class CompiledVidhiRule(PaniniRule):
         return ParibhasaRegistry.intercept_revert(self.spec, combined_surface, grammatical_context, res_splits)
 
 
+class RuleConfigCompiler:
+    """Compiles data-backed rule_configs rows into executable RuleSpec objects."""
+
+    @classmethod
+    def compile_all(cls, cur: sqlite3.Cursor) -> List[PaniniRule]:
+        from rule_engine.dsl import OperationSpec
+
+        rows = cur.execute(
+            """
+            SELECT rc.sutra_id, COALESCE(rc.name, s.sutra_slp1), rc.left_context,
+                   rc.right_context, rc.operation, rc.replacement
+            FROM rule_configs rc
+            LEFT JOIN sutras s ON s.id = rc.sutra_id
+            ORDER BY rc.sutra_id ASC, rc.id ASC
+            """
+        ).fetchall()
+
+        compiled: List[PaniniRule] = []
+        for sid, name, left_context, right_context, operation, replacement in rows:
+            domain = "tripadi" if cls._is_tripadi(sid) else "sapada"
+            target = _condition_from_config(left_context or "", "end")
+            right = _condition_from_config(right_context or "", "start") if right_context else None
+            spec = RuleSpec(
+                id=sid,
+                name=name or sid,
+                rule_type="vidhi_sandhi",
+                priority=1000,
+                target_context=target,
+                right_context=right,
+                operation=OperationSpec(op_type=operation, substitute=replacement),
+                governance={"domain": domain, "source": "rule_configs"},
+            )
+            rule = CompiledVidhiRule(spec)
+            rule.domain = "samhita"
+            compiled.append(rule)
+        return compiled
+
+    @staticmethod
+    def _is_tripadi(sutra_id: str) -> bool:
+        try:
+            a, p, _ = [int(part) for part in sutra_id.split(".")]
+        except Exception:
+            return False
+        return a > 8 or (a == 8 and p >= 2)
+
+
 class MasterCompilerPipeline:
     """Master Pipeline orchestrating SQLite ingestion -> AST compilation -> Runtime Registration."""
 
@@ -377,6 +476,8 @@ class MasterCompilerPipeline:
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
         rows = cur.execute("SELECT id, sutra_slp1, sutra_type, pada_cheda FROM sutras WHERE pada_cheda != '' ORDER BY id ASC").fetchall()
+        config_rules = RuleConfigCompiler.compile_all(cur)
+        configured_sutra_ids = {r.sutra_id for r in config_rules}
         conn.close()
 
         from compiler.registries import SanjnaRegistry, ParibhasaRegistry, AdhikaraContext
@@ -388,6 +489,8 @@ class MasterCompilerPipeline:
         anuvritti.reset()
 
         for sid, slp, stype, pc in rows:
+            if sid in configured_sutra_ids:
+                continue
             stype = stype or ""
             tokens = PadaChedaParser.parse(pc)
 
@@ -418,6 +521,6 @@ class MasterCompilerPipeline:
                 # Rule lacks operational transformation context; register as non-operational
                 pass
 
-        cls._compiled_cache = compiled
+        cls._compiled_cache = config_rules + compiled
         cls._loaded = True
         return cls._compiled_cache

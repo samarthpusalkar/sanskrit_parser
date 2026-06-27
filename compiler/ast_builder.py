@@ -138,7 +138,7 @@ class SutraAstBuilder:
                     sub_val = "vriddhi"
                 elif norm == "dIrGa":
                     is_savarna = any("savarR" in tok.slp1 for tok in tokens)
-                    if is_ekadesha and (right_cond or is_savarna or sutra_id == "6.1.101"):
+                    if is_ekadesha and (right_cond or is_savarna):
                         op_type = "ekadesha_savarna_dirgha"
                     else:
                         op_type = "dirgha"
@@ -192,11 +192,6 @@ class SutraAstBuilder:
                 missing_slots=["target"]
             )
 
-        op_holder = {"op_type": op_type, "sub_val": sub_val}
-        cls._apply_phonological_overrides(sutra_id, target_cond, right_cond, op_holder)
-        op_type = op_holder["op_type"]
-        sub_val = op_holder["sub_val"]
-
         op_spec = OperationSpec(op_type=op_type, substitute=sub_val)
         anuvritti.step(sutra_id, target_cond if has_target else None, left_cond, right_cond, op_spec)
 
@@ -217,49 +212,3 @@ class SutraAstBuilder:
             operation=op_spec,
             governance={"domain": domain}
         )
-
-    @classmethod
-    def _apply_phonological_overrides(
-        cls,
-        sutra_id: str,
-        target_cond: ConditionSpec,
-        right_cond: Optional[ConditionSpec],
-        op_holder: dict,
-    ) -> None:
-        """Map compiled sūtras with semantic gloss contexts to executable phonology.
-
-        These are still rule-level declarations: each override describes the
-        general sound class transformation named by the sūtra, not a particular
-        test word or output string.
-        """
-        overrides = {
-            "6.1.73": ("tuk_augment", None, None, "C"),
-            "6.1.109": ("purva_rupa", "eN", None, "a"),
-            "6.1.113": ("visarga_utva", None, "H", "a"),
-            "8.2.39": ("jhalam_jasho", "JaL", None, None),
-            "8.3.14": ("ro_ri_dirgha", None, "r", "r"),
-            "8.3.23": ("anusvara", None, "m", "haL"),
-            "8.4.1": ("natva", None, "n", None),
-            "8.4.40": ("stoh_scuna", None, None, None),
-            "8.4.45": ("yar_anunasika", "yaR", None, None),
-            "8.4.59": ("parasavarna", None, "M", "yaY"),
-            "8.4.63": ("shashcho_ti", None, "S", "aW"),
-            "8.2.77": ("internal_only", None, None, None),
-        }
-        override = overrides.get(sutra_id)
-        if not override:
-            return
-
-        op_type, target_prat, target_exact, right_prat_or_exact = override
-        op_holder["op_type"] = op_type
-        op_holder["sub_val"] = None
-
-        target_cond.pratyahara = target_prat
-        target_cond.exact_text = target_exact
-        if right_cond is not None and right_prat_or_exact:
-            if cls._resolve_pratyahara(right_prat_or_exact):
-                right_cond.pratyahara = right_prat_or_exact
-                right_cond.exact_text = None
-            else:
-                right_cond.pratyahara = None
-                right_cond.exact_text = right_prat_or_exact
