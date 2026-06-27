@@ -14,7 +14,7 @@ from compiler.ast_builder import SutraAstBuilder
 from rule_engine.dsl import RuleSpec
 from rules.base import PaniniRule
 from core.shiva_sutras import PratyaharaResolver
-from core.phonology import SHORT_VOWELS, VOWELS, CONSONANTS
+from core.phonology import SHORT_VOWELS, VOWELS, CONSONANTS, compute_ekadesha, apply_natva, apply_shatva
 
 
 
@@ -78,68 +78,24 @@ class CompiledVidhiRule(PaniniRule):
 
         op = self.spec.operation
         l_char = left[-1]
-        r_char = right[0]
-        data_ops = {
-            "insert", "merge", "substitute", "exact_substitute", "sanjna_substitute",
-            "bijection_substitute", "elide", "dirgha",
-            "purva_rupa", "visarga_utva", "ro_ri_dirgha",
-            "anusvara", "natva", "right_substitute",
-            "external_block", "non_operational", "governance", "prohibit",
-        }
 
-        if op.op_type in data_ops and _is_config_source(self.spec):
-            if not self.spec.target_context.pratyahara and not self.spec.target_context.exact_text and op.op_type != "governance":
-                return False
-            if not self._is_config_target_match(left, l_char):
-                return False
-            if self.spec.left_context and not self._is_config_condition_match(self.spec.left_context, left, left[-1]):
-                return False
-            if not self._is_valid_right_context(right):
-                return False
-            if op.op_type == "ro_ri_dirgha":
-                return len(left) >= 2 and left[-2] in SHORT_VOWELS
-            if op.op_type == "natva":
-                trigger = self.spec.left_context.exact_text if self.spec.left_context else "r|z|R"
-                return any(_symbolic_match(trigger, c) for c in left)
-            if op.op_type in {"external_block", "non_operational"}:
-                return False
-            return True
+        if op.op_type == "natva":
+            return apply_natva(left + right) != left + right
+        if op.op_type == "shatva":
+            return apply_shatva(left + right) != left + right
 
-        # Special handling for classical major Ekādeśa Sandhi sūtras via abstract op_type
-        if op.op_type in {"ekadesha_savarna_dirgha", "merge_savarna"}:
-            savarna_groups = [{'a', 'A'}, {'i', 'I'}, {'u', 'U'}, {'f', 'F'}, {'x'}]
-            return any(l_char in g and r_char in g for g in savarna_groups)
-
-        if op.op_type == "ekadesha_vriddhi":
-            return l_char in {'a', 'A'} and PratyaharaResolver.contains("eC", r_char)
-
-        if op.op_type == "ekadesha_guna":
-            if l_char not in {'a', 'A'} or not PratyaharaResolver.contains("aC", r_char):
-                return False
-            # Blocked if savarna or eC
-            if r_char in {'a', 'A'} or PratyaharaResolver.contains("eC", r_char):
-                return False
-            return True
-
-        # 1. Check Target Context (left ending)
-        tgt = self.spec.target_context
-        if tgt.pratyahara:
-            if not PratyaharaResolver.contains(tgt.pratyahara, l_char):
-                return False
-        elif tgt.exact_text:
-            allowed = set(tgt.exact_text.split(","))
-            if l_char not in allowed and left != tgt.exact_text:
-                return False
-
-        # 2. Check Right Context (right start)
-        phonological_ops = {
-            *data_ops,
-        }
-        if right and not self.spec.right_context and not self.spec.operation.op_type.startswith("ekadesha") and self.spec.operation.op_type not in phonological_ops:
+        if not self.spec.target_context.pratyahara and not self.spec.target_context.exact_text and op.op_type != "governance":
+            return False
+        if not self._is_config_target_match(left, l_char):
+            return False
+        if self.spec.left_context and not self._is_config_condition_match(self.spec.left_context, left, left[-1]):
             return False
         if not self._is_valid_right_context(right):
             return False
-
+        if op.op_type == "ro_ri_dirgha":
+            return len(left) >= 2 and left[-2] in SHORT_VOWELS
+        if op.op_type in {"external_block", "non_operational"}:
+            return False
         return True
 
     def _is_config_target_match(self, left: str, l_char: str) -> bool:
@@ -191,25 +147,16 @@ class CompiledVidhiRule(PaniniRule):
             return left[:-1], right
 
         elif op.op_type in {"ekadesha_savarna_dirgha", "merge_savarna", "dirgha"} or op.substitute == "dirgha":
-            dirgha_map = {'a': 'A', 'A': 'A', 'i': 'I', 'I': 'I', 'u': 'U', 'U': 'U', 'f': 'F', 'F': 'F'}
-            res_char = dirgha_map.get(l_char, l_char)
+            res_char = compute_ekadesha(l_char, right[0] if right else l_char, "dirgha")
             return left[:-1] + res_char, right[1:] if right else right
 
         elif op.op_type == "ekadesha_guna" or (op.op_type == "sanjna_substitute" and op.substitute == "guna"):
-            if right and right[0] in {'i', 'I'}:
-                return left[:-1] + 'e', right[1:]
-            elif right and right[0] in {'u', 'U'}:
-                return left[:-1] + 'o', right[1:]
-            elif right and right[0] in {'f', 'F'}:
-                return left[:-1] + 'ar', right[1:]
-            return left[:-1] + 'e', right[1:] if right else right
+            res_char = compute_ekadesha(l_char, right[0] if right else '', "guna")
+            return left[:-1] + res_char, right[1:] if right else right
 
         elif op.op_type == "ekadesha_vriddhi" or (op.op_type == "sanjna_substitute" and op.substitute == "vriddhi"):
-            if right and right[0] in {'e', 'E'}:
-                return left[:-1] + 'E', right[1:]
-            elif right and right[0] in {'o', 'O'}:
-                return left[:-1] + 'O', right[1:]
-            return left[:-1] + 'E', right[1:] if right else right
+            res_char = compute_ekadesha(l_char, right[0] if right else '', "vriddhi")
+            return left[:-1] + res_char, right[1:] if right else right
 
         elif op.op_type == "substitute" and _is_config_source(self.spec):
             return left[:-1] + (op.substitute or ""), right
@@ -268,8 +215,11 @@ class CompiledVidhiRule(PaniniRule):
         elif op.op_type == "purva_rupa":
             return left, "'" + right[1:]
 
+        elif op.op_type == "pararupa":
+            return left[:-1], right
+
         elif op.op_type == "visarga_utva":
-            return left[:-2] + 'o', "'" + right[1:]
+            return left[:-2] + 'o', right
 
         elif op.op_type == "ro_ri_dirgha":
             from core.phonology import SAVARNA_LONG
@@ -282,7 +232,12 @@ class CompiledVidhiRule(PaniniRule):
             return left, (op.substitute or "") + right[1:]
 
         elif op.op_type == "natva":
-            return left, 'R' + right[1:]
+            res = apply_natva(left + right)
+            return res[:len(left)], res[len(left):]
+
+        elif op.op_type == "shatva":
+            res = apply_shatva(left + right)
+            return res[:len(left)], res[len(left):]
 
         return left, right
 

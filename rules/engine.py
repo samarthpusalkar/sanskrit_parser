@@ -66,6 +66,8 @@ class UniversalRuleEngine:
             # Sūtra ordering: Sapāda respects vipratiṣedhe paraṃ kāryam (1.4.2, later prevails -> -num_id)
             # Tripādī executes sequentially (8.2.1 pūrvatrāsiddham -> num_id)
             sutra_order = num_id if domain_rank == 1 else -num_id
+            if domain_rank == 1:
+                return (domain_rank, sutra_order, -specificity)
             return (domain_rank, -specificity, sutra_order)
 
         rules_pool = []
@@ -100,6 +102,9 @@ class UniversalRuleEngine:
                 if r.sutra_id in applied_rules:
                     continue  # Sakṛd eva pravartate
                 if r.matches(cur_l, cur_r, ctx):
+                    op_type = getattr(getattr(r, "spec", None), "operation", None)
+                    if op_type and getattr(op_type, "op_type", "") in {"prohibit", "prakritibhava"}:
+                        return cur_l, cur_r
                     new_l, new_r = r.apply(cur_l, cur_r, ctx)
                     if new_l != cur_l or new_r != cur_r:
                         cur_l, cur_r = new_l, new_r

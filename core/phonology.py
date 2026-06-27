@@ -157,6 +157,129 @@ def get_sthana(phoneme: str) -> Sthana:
     return Sthana.KANTHYA
 
 
+def compute_antaratama(sthani: str, adesha_candidates: List[str]) -> str:
+    """
+    Pāṇini 1.1.50 (sthāne 'ntaratamaḥ): When multiple substitutes are available,
+    select the one whose point of articulation (sthāna) matches the target most closely.
+    """
+    target_sthana = get_sthana(sthani)
+    
+    # Direct match
+    for cand in adesha_candidates:
+        if get_sthana(cand) == target_sthana:
+            return cand
+            
+    # Compound sthāna affinity (e.g. KANTHA_TALU shares TALAVYA)
+    affinity = {
+        Sthana.TALAVYA: {Sthana.TALAVYA, Sthana.KANTHA_TALU},
+        Sthana.OSTHYA: {Sthana.OSTHYA, Sthana.KANTHA_OSTHA, Sthana.DANTOSTHA},
+        Sthana.KANTHYA: {Sthana.KANTHYA, Sthana.KANTHA_TALU, Sthana.KANTHA_OSTHA},
+    }
+    allowed = affinity.get(target_sthana, {target_sthana})
+    for cand in adesha_candidates:
+        if get_sthana(cand) in allowed:
+            return cand
+            
+    # If no sthāna match exists (e.g. MURDHANYA 'ṛ' or DANTYA 'ḷ' against Guṇa {e, o, a}),
+    # choose the neutral throat vowel 'a' over palatal/labial vowels.
+    if 'a' in adesha_candidates and target_sthana not in {Sthana.TALAVYA, Sthana.OSTHYA, Sthana.KANTHA_TALU, Sthana.KANTHA_OSTHA}:
+        return 'a'
+    if 'A' in adesha_candidates and target_sthana not in {Sthana.TALAVYA, Sthana.OSTHYA, Sthana.KANTHA_TALU, Sthana.KANTHA_OSTHA}:
+        return 'A'
+            
+    return adesha_candidates[0] if adesha_candidates else sthani
+
+
+def compute_ekadesha(l_char: str, r_char: str, op_type: str) -> str:
+    """
+    Pragmatic computation of Ekādeśa (single substitute for two phonemes)
+    using Pāṇinian meta-rules 1.1.50 (sthāne 'ntaratamaḥ) and 1.1.51 (uraṇ raparaḥ).
+    """
+    # 1. Savarṇa Dīrgha (6.1.101)
+    if op_type in {"ekadesha_savarna_dirgha", "merge_savarna", "dirgha"}:
+        return SAVARNA_LONG.get(l_char, l_char)
+
+    # 2. Guṇa (1.1.2 adeṅ guṇaḥ -> a, e, o) + 1.1.51 uraṇ raparaḥ
+    if op_type in {"ekadesha_guna", "guna"}:
+        guna_candidates = ['e', 'o', 'a']
+        sub = compute_antaratama(r_char, guna_candidates)
+        if r_char in {'f', 'F'}:
+            return sub + 'r'  # uraṇ raparaḥ (1.1.51)
+        if r_char in {'x', 'X'}:
+            return sub + 'l'  # uraṇ raparaḥ (1.1.51)
+        return sub
+
+    # 3. Vṛddhi (1.1.1 vṛddhir ādaic -> A, E, O) + 1.1.51 uraṇ raparaḥ
+    if op_type in {"ekadesha_vriddhi", "vriddhi"}:
+        vriddhi_candidates = ['E', 'O', 'A']
+        sub = compute_antaratama(r_char, vriddhi_candidates)
+        if r_char in {'f', 'F'}:
+            return sub + 'r'  # uraṇ raparaḥ
+        if r_char in {'x', 'X'}:
+            return sub + 'l'
+        return sub
+
+    return r_char
+
+
+def apply_natva(text: str) -> str:
+    """
+    Pragmatic computation of Ṇatva (retroflexion of dental 'n' to 'ṇ')
+    per Pāṇini 8.4.1 (raṣābhyāṃ no ṇaḥ samānapade), 8.4.2 (aṭ-kupu-āṅ-num-vyavāye 'pi),
+    and 8.4.37 (padāntasya exception).
+    """
+    allowed_intervening = VOWELS | {'h', 'y', 'v', 'r', 'k', 'K', 'g', 'G', 'N', 'p', 'P', 'b', 'B', 'm', 'M'}
+    res = list(text)
+    n_len = len(res)
+    
+    trigger_active = False
+    for i in range(n_len):
+        char = res[i]
+        if char in {'r', 'z'}:
+            trigger_active = True
+        elif trigger_active:
+            if char == 'n':
+                # Check 8.4.37 padāntasya (blocked if 'n' is the very last character)
+                if i < n_len - 1:
+                    res[i] = 'R'
+            elif char not in allowed_intervening:
+                trigger_active = False
+                
+    return "".join(res)
+
+
+def apply_shatva(text: str) -> str:
+    """
+    Pragmatic computation of Ṣatva (retroflexion of dental 's' to 'ṣ')
+    per Pāṇini 8.3.55 (apadāntasya mūrdhanyaḥ), 8.3.57 (iṇ-koḥ), and 8.3.59 (ādeśapratyayayoḥ).
+    """
+    in_vowels = {'i', 'I', 'u', 'U', 'f', 'F', 'x', 'X', 'e', 'E', 'o', 'O'}
+    ku_stops = {'k', 'K', 'g', 'G', 'N'}
+    triggers = in_vowels | ku_stops | {'r', 'l'}
+    allowed_vyavaya = {'M', 'H', 'S', 'z', 's'}
+    
+    res = list(text)
+    n_len = len(res)
+    
+    for i in range(1, n_len):
+        if res[i] == 's':
+            # Must not be padānta (word final) per 8.3.55
+            if i == n_len - 1 or (i < n_len - 1 and res[i+1] in {' ', '-', '+'}):
+                continue
+            # Must not be followed by 'r' per 8.3.57 exception
+            if i < n_len - 1 and res[i+1] == 'r':
+                continue
+                
+            # Look backward for iṆ or Ku trigger, allowing num/visarjanīya/śar vyavāya (8.3.58)
+            j = i - 1
+            while j >= 0 and res[j] in allowed_vyavaya:
+                j -= 1
+            if j >= 0 and res[j] in triggers:
+                res[i] = 'z'
+                
+    return "".join(res)
+
+
 # Devanagari mapping tables
 DEV_VOWELS = {
     'अ': 'a', 'आ': 'A', 'इ': 'i', 'ई': 'I', 'उ': 'u', 'ऊ': 'U',
