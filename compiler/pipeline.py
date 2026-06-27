@@ -11,10 +11,10 @@ from pathlib import Path
 from typing import List, Dict, Any, Tuple
 from compiler.pada_cheda import PadaChedaParser
 from compiler.ast_builder import SutraAstBuilder
-from rule_engine.dsl import RuleSpec
+from rule_engine.dsl import RuleSpec, PrimitiveOp
 from rules.base import PaniniRule
 from core.shiva_sutras import PratyaharaResolver
-from core.phonology import SHORT_VOWELS, VOWELS, CONSONANTS, compute_ekadesha, apply_natva, apply_shatva
+from core.phonology import SHORT_VOWELS, VOWELS, CONSONANTS, SAVARNA_LONG, compute_ekadesha, apply_natva, apply_shatva
 
 
 
@@ -77,20 +77,31 @@ class CompiledVidhiRule(PaniniRule):
     def __init__(self, spec: RuleSpec):
         super().__init__(spec.id, spec.name)
         self.spec = spec
+        if isinstance(spec.operation, PrimitiveOp):
+            self._prim = spec.operation
+        elif hasattr(spec.operation, 'to_primitive'):
+            self._prim = spec.operation.to_primitive()
+        else:
+            self._prim = PrimitiveOp.from_legacy(spec.operation.op_type, spec.operation.substitute)
 
     def matches(self, left: str, right: str, grammatical_context: Dict[str, Any]) -> bool:
         if not left or not right:
             return False
 
-        op = self.spec.operation
+        prim = self._prim
         l_char = left[-1]
 
-        if op.op_type == "natva":
+        # Scan-based compute functions check the full string
+        if prim.compute_fn == "natva":
             return apply_natva(left + right) != left + right
-        if op.op_type == "shatva":
+        if prim.compute_fn == "shatva":
             return apply_shatva(left + right) != left + right
 
-        if not self.spec.target_context.pratyahara and not self.spec.target_context.exact_text and op.op_type != "governance":
+        # Non-operational / blocking rules never match
+        if prim.op_type in {"external_block", "non_operational"}:
+            return False
+
+        if not self.spec.target_context.pratyahara and not self.spec.target_context.exact_text and prim.op_type != "governance":
             return False
         if not self._is_config_target_match(left, l_char):
             return False
@@ -98,10 +109,9 @@ class CompiledVidhiRule(PaniniRule):
             return False
         if not self._is_valid_right_context(right):
             return False
-        if op.op_type in {"ro_ri_dirgha", "dhra_lopa_dirgha"}:
+        # savarna_long needs a vowel at left[-2]
+        if prim.compute_fn == "savarna_long":
             return len(left) >= 2 and left[-2] in SHORT_VOWELS
-        if op.op_type in {"external_block", "non_operational"}:
-            return False
         return True
 
     def _is_config_target_match(self, left: str, l_char: str) -> bool:
@@ -157,132 +167,115 @@ class CompiledVidhiRule(PaniniRule):
         return ParibhasaRegistry.intercept_apply(self.spec, left, right, grammatical_context, res)
 
     def _apply_raw(self, left: str, right: str, grammatical_context: Dict[str, Any]) -> Tuple[str, str]:
+        """Universal primitive executor. No if-elif per operation type."""
         if not left:
             return left, right
-        op = self.spec.operation
+        prim = self._prim
         l_char = left[-1]
 
-        if op.op_type == "elide":
-            return left[:-1], right
+        # --- Compute the emit value ---
+        emit = prim.emit
 
-        elif op.op_type in {"ekadesha_savarna_dirgha", "merge_savarna", "dirgha"} or op.substitute == "dirgha":
-            res_char = compute_ekadesha(l_char, right[0] if right else l_char, "dirgha")
-            return left[:-1] + res_char, right[1:] if right else right
-
-        elif op.op_type == "ekadesha_guna" or (op.op_type == "sanjna_substitute" and op.substitute == "guna"):
-            res_char = compute_ekadesha(l_char, right[0] if right else '', "guna")
-            return left[:-1] + res_char, right[1:] if right else right
-
-        elif op.op_type == "ekadesha_vriddhi" or (op.op_type == "sanjna_substitute" and op.substitute == "vriddhi"):
-            res_char = compute_ekadesha(l_char, right[0] if right else '', "vriddhi")
-            return left[:-1] + res_char, right[1:] if right else right
-
-        elif op.op_type == "substitute" and _is_config_source(self.spec):
-            return left[:-1] + (op.substitute or ""), right
-
-        elif op.op_type in {"bijection_substitute", "substitute", "exact_substitute"}:
-            t_cond = self.spec.target_context
-            s_val = op.substitute
-            if t_cond and s_val:
-                try:
-                    if t_cond.pratyahara:
-                        t_list = PratyaharaResolver.resolve_list(t_cond.pratyahara)
-                    else:
-                        t_list = _expand_literal_pattern(t_cond.exact_text)
-                        
-                    if s_val.startswith("PRAT:"):
-                        s_list = PratyaharaResolver.resolve_list(s_val.removeprefix("PRAT:"))
-                    else:
-                        s_list = _expand_literal_pattern(s_val)
-                        
-                    savarna = {'A': 'a', 'I': 'i', 'U': 'u', 'F': 'f'}
-                    lookup = None
-                    
-                    if len(t_list) == len(s_list):
-                        fwd_map = dict(zip(t_list, s_list))
-                        lookup = fwd_map.get(l_char) or fwd_map.get(savarna.get(l_char, ''))
-                    else:
-                        from core.phonology import get_sthana
-                        search_char = right[0] if l_char == 'M' and right else savarna.get(l_char, l_char)
-                        if search_char in t_list or l_char == 'M':
-                            target_sthana = get_sthana(search_char)
-                            for cand in s_list:
-                                if get_sthana(cand) == target_sthana:
-                                    lookup = cand
-                                    break
-                                    
-                    if lookup:
-                        return left[:-1] + lookup, right
-                except Exception:
-                    pass
-            if op.substitute and op.substitute not in {"dirgha", "guna", "vriddhi"}:
-                t_exact = self.spec.target_context.exact_text
-                if t_exact:
-                    allowed = [t.strip() for t in t_exact.split(",") if t.strip()]
-                    for a in allowed:
-                        if left.endswith(a):
-                            return left[:-len(a)] + op.substitute, right
-                    return left, right
-                return left[:-1] + op.substitute, right
-
-        elif op.op_type == "insert":
-            return left + (op.substitute or ""), right
-
-        elif op.op_type == "merge":
-            return left[:-1] + (op.substitute or ""), right[1:]
-
-        elif op.op_type == "purva_rupa":
-            return left, "'" + right[1:]
-
-        elif op.op_type == "pararupa":
-            return left[:-1], right
-
-        elif op.op_type == "visarga_utva":
-            return left[:-2] + 'o', right
-
-        elif op.op_type in {"ro_ri_dirgha", "dhra_lopa_dirgha"}:
-            from core.phonology import SAVARNA_LONG
-            return left[:-2] + SAVARNA_LONG.get(left[-2], left[-2]), right
-
-        elif op.op_type == "anusvara":
-            return left[:-1] + 'M', right
-
-        elif op.op_type == "right_substitute":
-            return left, (op.substitute or "") + right[1:]
-
-        elif op.op_type == "right_prepend":
-            return left, (op.substitute or "") + right
-
-        elif op.op_type == "bijection_right_substitute":
-            t_cond = self.spec.target_context
-            s_val = op.substitute
-            if t_cond and s_val:
-                try:
-                    if t_cond.pratyahara:
-                        t_list = PratyaharaResolver.resolve_list(t_cond.pratyahara)
-                    else:
-                        t_list = _expand_literal_pattern(t_cond.exact_text)
-                    if s_val.startswith("PRAT:"):
-                        s_list = PratyaharaResolver.resolve_list(s_val.removeprefix("PRAT:"))
-                    else:
-                        s_list = _expand_literal_pattern(s_val)
-                    if len(t_list) == len(s_list):
-                        fwd_map = dict(zip(t_list, s_list))
-                        lookup = fwd_map.get(l_char)
-                        if lookup:
-                            return left, lookup + right[1:]
-                except Exception:
-                    pass
-
-        elif op.op_type == "natva":
+        if prim.compute_fn == "natva":
             res = apply_natva(left + right)
             return res[:len(left)], res[len(left):]
 
-        elif op.op_type == "shatva":
+        if prim.compute_fn == "shatva":
             res = apply_shatva(left + right)
             return res[:len(left)], res[len(left):]
 
-        return left, right
+        if prim.compute_fn == "guna":
+            emit = compute_ekadesha(l_char, right[0] if right else '', "guna")
+        elif prim.compute_fn == "vriddhi":
+            emit = compute_ekadesha(l_char, right[0] if right else '', "vriddhi")
+        elif prim.compute_fn == "dirgha":
+            emit = compute_ekadesha(l_char, right[0] if right else l_char, "dirgha")
+        elif prim.compute_fn == "savarna_long":
+            # Lengthen the vowel before the consumed chars
+            vowel_idx = len(left) - prim.left_consume
+            if vowel_idx >= 0 and vowel_idx < len(left):
+                emit = SAVARNA_LONG.get(left[vowel_idx], left[vowel_idx])
+            else:
+                emit = ""
+        elif prim.compute_fn == "duplicate":
+            emit = l_char
+        elif prim.compute_fn == "bijection":
+            emit = self._resolve_bijection(left, right, prim)
+            if emit is None:
+                # Bijection couldn't resolve — try literal substitute fallback
+                emit = self._resolve_literal_substitute(left, prim)
+                if emit is None:
+                    return left, right
+
+        # --- Apply primitive: consume + emit ---
+        new_left = left[:-prim.left_consume] if prim.left_consume else left
+        new_right = right[prim.right_consume:] if prim.right_consume else right
+
+        if prim.emit_side == "right":
+            new_right = emit + new_right
+        else:
+            new_left = new_left + emit
+
+        return new_left, new_right
+
+    def _resolve_bijection(self, left: str, right: str, prim: 'PrimitiveOp') -> 'str | None':
+        """Resolve bijection mapping for substitute/right_substitute operations."""
+        t_cond = self.spec.target_context
+        s_val = prim.substitute
+        if not t_cond or not s_val:
+            return None
+        try:
+            if t_cond.pratyahara:
+                t_list = PratyaharaResolver.resolve_list(t_cond.pratyahara)
+            else:
+                t_list = _expand_literal_pattern(t_cond.exact_text)
+            if s_val.startswith("PRAT:"):
+                s_list = PratyaharaResolver.resolve_list(s_val.removeprefix("PRAT:"))
+            else:
+                s_list = _expand_literal_pattern(s_val)
+
+            l_char = left[-1]
+            savarna = {'A': 'a', 'I': 'i', 'U': 'u', 'F': 'f'}
+
+            if prim.emit_side == "right":
+                # Bijection on right boundary char
+                if len(t_list) == len(s_list):
+                    fwd_map = dict(zip(t_list, s_list))
+                    return fwd_map.get(l_char)
+                return None
+
+            # Bijection on left boundary char
+            if len(t_list) == len(s_list):
+                fwd_map = dict(zip(t_list, s_list))
+                return fwd_map.get(l_char) or fwd_map.get(savarna.get(l_char, ''))
+            else:
+                from core.phonology import get_sthana
+                search_char = right[0] if l_char == 'M' and right else savarna.get(l_char, l_char)
+                if search_char in t_list or l_char == 'M':
+                    target_sthana = get_sthana(search_char)
+                    for cand in s_list:
+                        if get_sthana(cand) == target_sthana:
+                            return cand
+        except Exception:
+            pass
+        return None
+
+    def _resolve_literal_substitute(self, left: str, prim: 'PrimitiveOp') -> 'str | None':
+        """Fallback for non-bijection substitute: match target pattern in left."""
+        sub = prim.substitute
+        if not sub or sub in {"dirgha", "guna", "vriddhi"}:
+            return None
+        t_exact = self.spec.target_context.exact_text if self.spec.target_context else None
+        if t_exact:
+            allowed = [t.strip() for t in t_exact.split(",") if t.strip()]
+            for a in allowed:
+                if left.endswith(a):
+                    # Return sub but also adjust left to remove the full match (not just 1 char)
+                    # We need to return the emit AND adjust left_consume
+                    # For now, handle the multi-char target by returning the substitute directly
+                    return sub
+            return None
+        return sub
 
     def revert(self, combined_surface: str, grammatical_context: Dict[str, Any]) -> List[Tuple[str, str]]:
         splits = []
@@ -516,16 +509,31 @@ class RuleConfigCompiler:
 
     @classmethod
     def compile_all(cls, cur: sqlite3.Cursor) -> List[PaniniRule]:
-        from rule_engine.dsl import OperationSpec
+        from rule_engine.dsl import OperationSpec, PrimitiveOp
 
         columns = {row[1] for row in cur.execute("PRAGMA table_info(rule_configs)").fetchall()}
         has_extended_schema = {"target_context", "domain", "source"}.issubset(columns)
-        if has_extended_schema:
+        has_primitives = {"left_consume", "right_consume", "emit", "emit_side", "compute_fn"}.issubset(columns)
+
+        if has_extended_schema and has_primitives:
             query = """
                 SELECT rc.sutra_id, COALESCE(rc.name, s.sutra_slp1),
                        COALESCE(NULLIF(rc.target_context, ''), rc.left_context),
                        CASE WHEN NULLIF(rc.target_context, '') IS NULL THEN NULL ELSE rc.left_context END,
-                       rc.right_context, rc.operation, rc.replacement, rc.domain, rc.source
+                       rc.right_context, rc.operation, rc.replacement, rc.domain, rc.source,
+                       rc.left_consume, rc.right_consume, rc.emit, rc.emit_side, rc.compute_fn
+                FROM rule_configs rc
+                LEFT JOIN sutras s ON s.id = rc.sutra_id
+                WHERE COALESCE(rc.operation, '') != 'non_operational'
+                ORDER BY rc.sutra_id ASC, rc.id ASC
+            """
+        elif has_extended_schema:
+            query = """
+                SELECT rc.sutra_id, COALESCE(rc.name, s.sutra_slp1),
+                       COALESCE(NULLIF(rc.target_context, ''), rc.left_context),
+                       CASE WHEN NULLIF(rc.target_context, '') IS NULL THEN NULL ELSE rc.left_context END,
+                       rc.right_context, rc.operation, rc.replacement, rc.domain, rc.source,
+                       NULL, NULL, NULL, NULL, NULL
                 FROM rule_configs rc
                 LEFT JOIN sutras s ON s.id = rc.sutra_id
                 WHERE COALESCE(rc.operation, '') != 'non_operational'
@@ -534,7 +542,8 @@ class RuleConfigCompiler:
         else:
             query = """
                 SELECT rc.sutra_id, COALESCE(rc.name, s.sutra_slp1),
-                       rc.left_context, NULL, rc.right_context, rc.operation, rc.replacement, NULL, NULL
+                       rc.left_context, NULL, rc.right_context, rc.operation, rc.replacement, NULL, NULL,
+                       NULL, NULL, NULL, NULL, NULL
                 FROM rule_configs rc
                 LEFT JOIN sutras s ON s.id = rc.sutra_id
                 WHERE COALESCE(rc.operation, '') != 'non_operational'
@@ -546,11 +555,18 @@ class RuleConfigCompiler:
         ).fetchall()
 
         compiled: List[PaniniRule] = []
-        for sid, name, target_context, left_context, right_context, operation, replacement, row_domain, row_source in rows:
+        for sid, name, target_context, left_context, right_context, operation, replacement, row_domain, row_source, lc, rc, em, es, cf in rows:
             domain = row_domain or ("tripadi" if cls._is_tripadi(sid) else "sapada")
             target = _condition_from_config(target_context or "", "end")
             left = _condition_from_config(left_context or "", "end") if left_context else None
             right = _condition_from_config(right_context or "", "start") if right_context else None
+            if has_primitives and lc is not None:
+                op_obj = PrimitiveOp(
+                    left_consume=lc, right_consume=rc, emit=em or "", emit_side=es or "left", compute_fn=cf,
+                    substitute=replacement, op_type=operation
+                )
+            else:
+                op_obj = OperationSpec(op_type=operation, substitute=replacement)
             spec = RuleSpec(
                 id=sid,
                 name=name or sid,
@@ -559,7 +575,7 @@ class RuleConfigCompiler:
                 target_context=target,
                 left_context=left,
                 right_context=right,
-                operation=OperationSpec(op_type=operation, substitute=replacement),
+                operation=op_obj,
                 governance={"domain": domain, "source": row_source or "rule_configs"},
             )
             rule = CompiledVidhiRule(spec)

@@ -6,7 +6,7 @@ Enables mechanical invertibility, rule introspection, and formal verification.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Set, Optional, Any, List
+from typing import Dict, Set, Optional, Any, List, Union
 from vm.token import DagToken
 from core.shiva_sutras import PratyaharaResolver
 
@@ -77,12 +77,91 @@ class ConditionSpec:
 
 
 @dataclass
+class PrimitiveOp:
+    """
+    Universal operation primitive. Every Pāṇinian operation decomposes to:
+    - Remove last `left_consume` chars from left boundary
+    - Remove first `right_consume` chars from right boundary
+    - Insert `emit` string on `emit_side` ('left' or 'right')
+    - If `compute_fn` is set, compute the emit value dynamically
+
+    compute_fn is a CLOSED set from Pāṇini's finite operation vocabulary:
+    NULL, 'guna', 'vriddhi', 'dirgha', 'savarna_long', 'bijection', 'natva', 'shatva'
+    """
+    left_consume: int = 0
+    right_consume: int = 0
+    emit: str = ""
+    emit_side: str = "left"         # 'left' or 'right'
+    compute_fn: Optional[str] = None  # NULL, 'guna', 'vriddhi', 'dirgha', 'savarna_long', 'bijection', 'natva', 'shatva'
+    # Kept for bijection resolution and revert compatibility
+    substitute: Optional[str] = None
+    op_type: Optional[str] = None   # legacy label, kept for revert index
+
+    @classmethod
+    def from_legacy(cls, op_type: str, substitute: Optional[str] = None) -> 'PrimitiveOp':
+        """Convert old op_type + substitute string into universal primitives."""
+        sub = substitute or ""
+        mapping = {
+            "elide":                    (1, 0, "",    "left",  None),
+            "substitute":               (1, 0, sub,   "left",  None),
+            "exact_substitute":         (1, 0, sub,   "left",  None),
+            "insert":                   (0, 0, sub,   "left",  None),
+            "merge":                    (1, 1, sub,   "left",  None),
+            "purva_rupa":               (0, 1, "'",   "right", None),
+            "pararupa":                 (1, 0, "",    "left",  None),
+            "visarga_utva":             (2, 0, "o",   "left",  None),
+            "anusvara":                 (1, 0, "M",   "left",  None),
+            "right_substitute":         (0, 1, sub,   "right", None),
+            "right_prepend":            (0, 0, sub,   "right", None),
+            "prakritibhava":            (0, 0, "",    "left",  None),
+            "non_operational":          (0, 0, "",    "left",  None),
+            "external_block":           (0, 0, "",    "left",  None),
+            "governance":               (0, 0, "",    "left",  None),
+            "prohibit":                 (0, 0, "",    "left",  None),
+            # Computed operations
+            "dirgha":                   (1, 1, "",    "left",  "dirgha"),
+            "ekadesha_savarna_dirgha":  (1, 1, "",    "left",  "dirgha"),
+            "merge_savarna":            (1, 1, "",    "left",  "dirgha"),
+            "ekadesha_guna":            (1, 1, "",    "left",  "guna"),
+            "ekadesha_vriddhi":         (1, 1, "",    "left",  "vriddhi"),
+            "ro_ri_dirgha":             (2, 0, "",    "left",  "savarna_long"),
+            "dhra_lopa_dirgha":         (2, 0, "",    "left",  "savarna_long"),
+            "bijection_substitute":     (1, 0, sub,   "left",  "bijection"),
+            "bijection_right_substitute": (0, 1, sub, "right", "bijection"),
+            "natva":                    (0, 0, "",    "left",  "natva"),
+            "shatva":                   (0, 0, "",    "left",  "shatva"),
+        }
+        # Handle sanjna_substitute by checking the substitute value
+        if op_type == "sanjna_substitute":
+            if sub == "guna":
+                lc, rc, em, es, cf = (1, 1, "", "left", "guna")
+            elif sub == "vriddhi":
+                lc, rc, em, es, cf = (1, 1, "", "left", "vriddhi")
+            elif sub == "dirgha":
+                lc, rc, em, es, cf = (1, 1, "", "left", "dirgha")
+            else:
+                lc, rc, em, es, cf = (1, 0, sub, "left", None)
+        else:
+            lc, rc, em, es, cf = mapping.get(op_type, (1, 0, sub, "left", None))
+
+        return cls(
+            left_consume=lc, right_consume=rc,
+            emit=em, emit_side=es, compute_fn=cf,
+            substitute=substitute, op_type=op_type
+        )
+
+
+@dataclass
 class OperationSpec:
-    """Surgical string modification command."""
+    """Surgical string modification command (legacy, kept for backward compat)."""
     op_type: str                               # 'substitute', 'augment', 'elide', 'merge_sandhi'
     substitute: Optional[str] = None           # Exact str, or 'guna', 'vriddhi', 'dirgha', or pratyahara 'yaṆ'
     augment: Optional[str] = None
     position: str = "in_place"                 # 'before', 'after', 'in_place'
+
+    def to_primitive(self) -> 'PrimitiveOp':
+        """Convert this legacy spec to a universal primitive."""
+        return PrimitiveOp.from_legacy(self.op_type, self.substitute)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'OperationSpec':
@@ -120,7 +199,7 @@ class RuleSpec:
     target_context: ConditionSpec
     left_context: Optional[ConditionSpec] = None
     right_context: Optional[ConditionSpec] = None
-    operation: OperationSpec = field(default_factory=lambda: OperationSpec("substitute"))
+    operation: Union[OperationSpec, PrimitiveOp] = field(default_factory=lambda: OperationSpec("substitute"))
     governance: GovernanceSpec = field(default_factory=GovernanceSpec)
 
     @classmethod
