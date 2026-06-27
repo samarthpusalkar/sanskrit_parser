@@ -99,13 +99,19 @@ class CompiledVidhiRule(PaniniRule):
         l_char = left[-1]
         r_char = right[0]
         data_ops = {
-            "insert", "merge", "substitute", "voice", "nasalize", "palatalize", "purva_rupa",
-            "visarga_utva", "ro_ri_dirgha", "anusvara", "parasavarna",
-            "natva", "right_substitute", "external_block",
+            "insert", "merge", "substitute", "exact_substitute", "sanjna_substitute",
+            "bijection_substitute", "elide", "dirgha", "voice", "nasalize",
+            "palatalize", "purva_rupa", "visarga_utva", "ro_ri_dirgha",
+            "anusvara", "parasavarna", "natva", "right_substitute",
+            "external_block", "non_operational", "governance", "prohibit",
         }
 
         if op.op_type in data_ops and _is_config_source(self.spec):
+            if not self.spec.target_context.pratyahara and not self.spec.target_context.exact_text and op.op_type != "governance":
+                return False
             if not self._is_config_target_match(left, l_char):
+                return False
+            if self.spec.left_context and not self._is_config_condition_match(self.spec.left_context, left, left[-1]):
                 return False
             if not self._is_valid_right_context(right):
                 return False
@@ -114,7 +120,7 @@ class CompiledVidhiRule(PaniniRule):
             if op.op_type == "natva":
                 trigger = self.spec.left_context.exact_text if self.spec.left_context else "r|z|R"
                 return any(_symbolic_match(trigger, c) for c in left)
-            if op.op_type == "external_block":
+            if op.op_type in {"external_block", "non_operational"}:
                 return False
             return True
 
@@ -157,10 +163,18 @@ class CompiledVidhiRule(PaniniRule):
 
     def _is_config_target_match(self, left: str, l_char: str) -> bool:
         tgt = self.spec.target_context
-        if tgt.pratyahara:
-            return PratyaharaResolver.contains(tgt.pratyahara, l_char)
-        if tgt.exact_text:
-            return left.endswith(tgt.exact_text) or _symbolic_match(tgt.exact_text, l_char)
+        return self._is_config_condition_match(tgt, left, l_char)
+
+    def _is_config_condition_match(self, cond, text: str, boundary_char: str) -> bool:
+        if not cond:
+            return True
+        if not text:
+            return False
+        char_to_check = text[0] if cond.match_pos == "start" else boundary_char
+        if cond.pratyahara:
+            return PratyaharaResolver.contains(cond.pratyahara, char_to_check)
+        if cond.exact_text:
+            return text.endswith(cond.exact_text) or _symbolic_match(cond.exact_text, char_to_check)
         return True
 
     def _is_valid_right_context(self, right_str: str) -> bool:
@@ -436,6 +450,7 @@ class RuleConfigCompiler:
                        rc.right_context, rc.operation, rc.replacement, rc.domain, rc.source
                 FROM rule_configs rc
                 LEFT JOIN sutras s ON s.id = rc.sutra_id
+                WHERE COALESCE(rc.operation, '') != 'non_operational'
                 ORDER BY rc.sutra_id ASC, rc.id ASC
             """
         else:
@@ -444,6 +459,7 @@ class RuleConfigCompiler:
                        rc.left_context, NULL, rc.right_context, rc.operation, rc.replacement, NULL, NULL
                 FROM rule_configs rc
                 LEFT JOIN sutras s ON s.id = rc.sutra_id
+                WHERE COALESCE(rc.operation, '') != 'non_operational'
                 ORDER BY rc.sutra_id ASC, rc.id ASC
             """
 

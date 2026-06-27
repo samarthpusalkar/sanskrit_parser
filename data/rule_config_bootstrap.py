@@ -22,7 +22,25 @@ def encode_condition(cond) -> str:
     return cond.exact_text or ""
 
 
-def bootstrap_rule_configs(db_path: str, limit: Optional[int] = None) -> int:
+def ensure_extended_schema(cur: sqlite3.Cursor) -> None:
+    columns = {row[1] for row in cur.execute("PRAGMA table_info(rule_configs)").fetchall()}
+    for col, ddl in {
+        "target_context": "ALTER TABLE rule_configs ADD COLUMN target_context TEXT",
+        "domain": "ALTER TABLE rule_configs ADD COLUMN domain TEXT",
+        "source": "ALTER TABLE rule_configs ADD COLUMN source TEXT",
+    }.items():
+        if col not in columns:
+            cur.execute(ddl)
+
+
+def bootstrap_rule_configs(db_path: str, limit: Optional[int] = None, include_unresolved: bool = True) -> int:
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.cursor()
+        ensure_extended_schema(cur)
+        cur.execute("DELETE FROM rule_configs WHERE source = 'bootstrap_ast'")
+        cur.execute("DELETE FROM rule_configs WHERE source = 'unresolved'")
+        conn.commit()
+
     MasterCompilerPipeline._compiled_cache = []
     MasterCompilerPipeline._loaded = False
     rules = MasterCompilerPipeline.compile_all(db_path)
@@ -56,15 +74,9 @@ def bootstrap_rule_configs(db_path: str, limit: Optional[int] = None) -> int:
 
     with sqlite3.connect(db_path) as conn:
         cur = conn.cursor()
-        columns = {row[1] for row in cur.execute("PRAGMA table_info(rule_configs)").fetchall()}
-        for col, ddl in {
-            "target_context": "ALTER TABLE rule_configs ADD COLUMN target_context TEXT",
-            "domain": "ALTER TABLE rule_configs ADD COLUMN domain TEXT",
-            "source": "ALTER TABLE rule_configs ADD COLUMN source TEXT",
-        }.items():
-            if col not in columns:
-                cur.execute(ddl)
+        ensure_extended_schema(cur)
         cur.execute("DELETE FROM rule_configs WHERE source = 'bootstrap_ast'")
+        cur.execute("DELETE FROM rule_configs WHERE source = 'unresolved'")
         cur.executemany(
             """
             INSERT INTO rule_configs
@@ -74,17 +86,45 @@ def bootstrap_rule_configs(db_path: str, limit: Optional[int] = None) -> int:
             """,
             rows,
         )
+        if include_unresolved:
+            cur.execute(
+                """
+                INSERT INTO rule_configs
+                    (sutra_id, name, operation, replacement, domain, source)
+                SELECT s.id, s.sutra_slp1, 'non_operational', '', 
+                       CASE
+                           WHEN CAST(substr(s.id, 1, instr(s.id, '.') - 1) AS INTEGER) > 8
+                                OR (
+                                    CAST(substr(s.id, 1, instr(s.id, '.') - 1) AS INTEGER) = 8
+                                    AND CAST(substr(
+                                        s.id,
+                                        instr(s.id, '.') + 1,
+                                        instr(substr(s.id, instr(s.id, '.') + 1), '.') - 1
+                                    ) AS INTEGER) >= 2
+                                )
+                           THEN 'tripadi'
+                           ELSE 'sapada'
+                       END,
+                       'unresolved'
+                FROM sutras s
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM rule_configs rc WHERE rc.sutra_id = s.id
+                )
+                """
+            )
         conn.commit()
-    return len(rows)
+        unresolved_count = cur.execute("SELECT COUNT(*) FROM rule_configs WHERE source = 'unresolved'").fetchone()[0]
+    return len(rows) + unresolved_count
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", default="data/sanskrit_master.db")
-    parser.add_argument("--limit", type=int, default=500)
+    parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--no-unresolved", action="store_true")
     args = parser.parse_args()
-    count = bootstrap_rule_configs(args.db, args.limit)
-    print(f"Inserted {count} bootstrapped rule_configs.")
+    count = bootstrap_rule_configs(args.db, args.limit, include_unresolved=not args.no_unresolved)
+    print(f"Inserted/updated {count} generated rule_configs.")
 
 
 if __name__ == "__main__":
