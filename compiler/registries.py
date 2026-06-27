@@ -38,14 +38,26 @@ class SanjnaRegistry:
             try:
                 conn = sqlite3.connect(db_path)
                 c = conn.cursor()
-                for row in c.execute("SELECT id, sutra_slp1, sutra_type, pada_cheda FROM sutras WHERE sutra_type LIKE '%S$%'"):
+                for row in c.execute("SELECT id, sutra_slp1, sutra_type, pada_cheda FROM sutras"):
                     sid, slp, stype, pc = row
-                    cls._RAW_SUTRAS[sid] = slp
-                    # Dynamic resolution of pratyahara-based definitions
-                    if "guRa" in slp or "guRa" in pc:
-                        cls._MAP["guRa"] = {"a", "e", "o", "ar", "al"}
-                    elif "vfdDi" in slp or "vfdDi" in pc:
-                        cls._MAP["vfdDi"] = {"A", "E", "O", "Ar", "Al"}
+                    stype = stype or ""
+                    
+                    is_sanjna = False
+                    if stype.startswith("S$") or "saMjYA" in pc or "saMjYA" in slp:
+                        is_sanjna = True
+                    else:
+                        from compiler.pada_cheda import PadaChedaParser
+                        tokens = PadaChedaParser.parse(pc)
+                        if tokens and all(t.is_substitute for t in tokens) and not any(t.is_target or t.is_left_context or t.is_right_context for t in tokens):
+                            is_sanjna = True
+                    
+                    if is_sanjna:
+                        cls._RAW_SUTRAS[sid] = slp
+                        # Dynamic resolution of pratyahara-based definitions
+                        if "guRa" in slp or "guRa" in pc:
+                            cls._MAP["guRa"] = {"a", "e", "o", "ar", "al"}
+                        elif "vfdDi" in slp or "vfdDi" in pc:
+                            cls._MAP["vfdDi"] = {"A", "E", "O", "Ar", "Al"}
                 conn.close()
             except Exception:
                 pass
@@ -222,6 +234,28 @@ class ParibhasaRegistry:
     """Registry storing Paribhāṣā meta-rules acting as runtime interceptors."""
 
     _RAW_SUTRAS: Dict[str, str] = {}
+    _INIT_DONE: bool = False
+
+    @classmethod
+    def _init_db(cls):
+        if cls._INIT_DONE:
+            return
+        cls._INIT_DONE = True
+        db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "sanskrit_master.db")
+        if os.path.exists(db_path):
+            try:
+                conn = sqlite3.connect(db_path)
+                c = conn.cursor()
+                for row in c.execute("SELECT id, sutra_slp1, sutra_type FROM sutras"):
+                    sid, slp, stype = row
+                    stype = stype or ""
+                    if stype.startswith("P$") or stype.startswith("AT$") or stype.startswith("AD$") or any(
+                        marker in slp for marker in ("sTAne", "prasaNge", "vat", "atiDeSa")
+                    ):
+                        cls._RAW_SUTRAS[sid] = slp
+                conn.close()
+            except Exception:
+                pass
 
     @classmethod
     def register_sutra(cls, sutra_id: str, sutra_slp1: str):
@@ -237,6 +271,7 @@ class ParibhasaRegistry:
         raw_result: Tuple[str, str]
     ) -> Tuple[str, str]:
         """Apply Paribhāṣā meta-rule logic to forward transformations."""
+        cls._init_db()
         res_l, res_r = raw_result
 
         # Paribhāṣā 1.1.50 sthāne 'ntaratamaḥ (closest articulation affinity)

@@ -516,50 +516,13 @@ class MasterCompilerPipeline:
         cur = conn.cursor()
         rows = cur.execute("SELECT id, sutra_slp1, sutra_type, pada_cheda FROM sutras WHERE pada_cheda != '' ORDER BY id ASC").fetchall()
         config_rules = RuleConfigCompiler.compile_all(cur)
-        configured_sutra_ids = {r.sutra_id for r in config_rules}
         conn.close()
 
         from compiler.registries import SanjnaRegistry, ParibhasaRegistry, AdhikaraContext
-        from compiler.anuvritti import AnuvrittiEngine
-        from compiler.exceptions import PaninianCompilationError
+        SanjnaRegistry._init_db()
+        ParibhasaRegistry._init_db()
+        AdhikaraContext._init_db()
 
-        compiled = []
-        anuvritti = AnuvrittiEngine.get_instance()
-        anuvritti.reset()
-
-        for sid, slp, stype, pc in rows:
-            if sid in configured_sutra_ids:
-                continue
-            stype = stype or ""
-            tokens = PadaChedaParser.parse(pc)
-
-            # Algorithmic classification based on Vibhakti parsing and markers
-            if stype.startswith("P$") or stype.startswith("AT$") or stype.startswith("AD$") or any(
-                marker in slp for marker in ("sTAne", "prasaNge", "vat", "atiDeSa")
-            ):
-                ParibhasaRegistry.register_sutra(sid, slp)
-                continue
-            elif stype.startswith("S$") or "saMjYA" in pc or "saMjYA" in slp or (
-                all(t.is_substitute for t in tokens) and not any(t.is_target or t.is_left_context or t.is_right_context for t in tokens)
-            ):
-                SanjnaRegistry.register_sutra(sid, slp)
-                continue
-
-            # Skip Svara (accentuation) adhikāra rules so they do not distort letter Sandhi
-            props = AdhikaraContext.get_active_properties(sid)
-            dom_str = props.get("domain", "")
-            if "स्वर" in dom_str or "svara" in dom_str.lower() or any(x in slp for x in ("udAtta", "anudAtta", "svarita")):
-                continue
-
-            try:
-                spec = SutraAstBuilder.build(sid, slp, tokens)
-                rule = CompiledVidhiRule(spec)
-                rule.domain = props.get("semantic_domain", "samhita")
-                compiled.append(rule)
-            except PaninianCompilationError:
-                # Rule lacks operational transformation context; register as non-operational
-                pass
-
-        cls._compiled_cache = config_rules + compiled
+        cls._compiled_cache = config_rules
         cls._loaded = True
         return cls._compiled_cache
