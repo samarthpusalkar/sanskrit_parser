@@ -575,7 +575,14 @@ class RuleConfigCompiler:
 
         compiled: List[PaniniRule] = []
         for sid, name, target_context, left_context, right_context, operation, replacement, row_domain, row_source, lc, rc, em, es, cf in rows:
-            domain = row_domain or ("tripadi" if cls._is_tripadi(sid) else "sapada")
+            if row_domain in {"samhita", "tripadi", "sapada", "angasya", "aluk", "general"}:
+                domain = row_domain
+            elif cls._is_tripadi(sid):
+                domain = "tripadi"
+            elif cls._is_samhita_section(sid):
+                domain = "samhita"
+            else:
+                domain = "sapada"
             target = _condition_from_config(target_context or "", "end")
             left = _condition_from_config(left_context or "", "end") if left_context else None
             right = _condition_from_config(right_context or "", "start") if right_context else None
@@ -598,7 +605,7 @@ class RuleConfigCompiler:
                 governance={"domain": domain, "source": row_source or "rule_configs"},
             )
             rule = CompiledVidhiRule(spec)
-            rule.domain = "samhita"
+            rule.domain = domain
             compiled.append(rule)
         return compiled
 
@@ -609,6 +616,18 @@ class RuleConfigCompiler:
         except Exception:
             return False
         return a > 8 or (a == 8 and p >= 2)
+
+    @staticmethod
+    def _is_samhita_section(sutra_id: str) -> bool:
+        try:
+            parts = [int(part) for part in sutra_id.split(".")[:3]]
+            if len(parts) >= 3:
+                a, p, s = parts[0], parts[1], parts[2]
+                if a == 6 and p == 1 and s >= 72:
+                    return True
+        except Exception:
+            pass
+        return False
 
 
 class MasterCompilerPipeline:

@@ -20,9 +20,6 @@ class SandhiEngine:
         from rules.engine import UniversalRuleEngine
         engine = UniversalRuleEngine.get_instance()
         res_l, res_r = engine.dispatch_forward(w1, w2)
-        from core.phonology import ends_with_vowel, starts_with_vowel
-        if res_l and res_r and ends_with_vowel(res_l) and starts_with_vowel(res_r):
-            return res_l + " " + res_r
         return res_l + res_r
 
     @classmethod
