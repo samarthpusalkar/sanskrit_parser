@@ -48,6 +48,9 @@ class ParibhasaAxiom:
     source:      str
     encoded_as:  Optional["LogicalPredicate"] = None
 
+    def __hash__(self) -> int:
+        return hash(self.axiom_id)
+
 
 @dataclass
 class TraditionConfig:

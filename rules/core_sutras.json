@@ -4,101 +4,158 @@
     "name": "iko yanaci",
     "rule_type": "vidhi_sandhi",
     "priority": 100,
-    "target_context": {
-      "pratyahara": "iK",
-      "anal_vidhi": true
-    },
-    "right_context": {
-      "pratyahara": "aC",
-      "anal_vidhi": true
-    },
-    "operation": {
-      "op_type": "substitute",
-      "substitute": "yan"
-    },
-    "governance": {
-      "domain": "sapada"
-    }
+    "left_context": { "pratyahara": "iK" },
+    "right_context": { "pratyahara": "aC" },
+    "operation": { "op_type": "yan" },
+    "governance": { "domain": "sapada" }
   },
   {
     "id": "6.1.101",
     "name": "akah savarne dirghah",
     "rule_type": "vidhi_sandhi",
     "priority": 200,
-    "target_context": {
-      "pratyahara": "aK",
-      "anal_vidhi": true
-    },
-    "right_context": {
-      "pratyahara": "aK",
-      "anal_vidhi": true,
-      "savarna_with_target": true
-    },
-    "operation": {
-      "op_type": "merge_sandhi",
-      "substitute": "dirgha"
-    },
-    "governance": {
-      "domain": "sapada"
-    }
+    "left_context": { "pratyahara": "aK" },
+    "right_context": { "pratyahara": "aK" },
+    "operation": { "op_type": "savarna_dirgha" },
+    "governance": { "domain": "sapada" }
   },
   {
     "id": "6.1.87",
     "name": "adgunah",
     "rule_type": "vidhi_sandhi",
     "priority": 150,
-    "target_context": {
-      "exact_text": "a,A",
-      "anal_vidhi": true
-    },
-    "right_context": {
-      "pratyahara": "iK",
-      "anal_vidhi": true
-    },
-    "operation": {
-      "op_type": "merge_sandhi",
-      "substitute": "guna"
-    },
-    "governance": {
-      "domain": "sapada"
-    }
+    "left_context": { "exact_text": ["a", "ā"] },
+    "right_context": { "pratyahara": "iK" },
+    "operation": { "op_type": "guna" },
+    "governance": { "domain": "sapada" }
   },
   {
     "id": "6.1.88",
     "name": "vrddhireci",
     "rule_type": "vidhi_sandhi",
     "priority": 180,
-    "target_context": {
-      "exact_text": "a,A",
-      "anal_vidhi": true
-    },
-    "right_context": {
-      "pratyahara": "eC",
-      "anal_vidhi": true
-    },
-    "operation": {
-      "op_type": "merge_sandhi",
-      "substitute": "vriddhi"
-    },
-    "governance": {
-      "domain": "sapada"
-    }
+    "left_context": { "exact_text": ["a", "ā"] },
+    "right_context": { "pratyahara": "eC" },
+    "operation": { "op_type": "vriddhi" },
+    "governance": { "domain": "sapada" }
   },
   {
-    "id": "8.3.15",
-    "name": "kharavasanayoḥ visargah",
+    "id": "6.1.94",
+    "name": "sakandhvadisu pararupam vacyam",
+    "rule_type": "vartika",
+    "priority": 250,
+    "left_context": { "exact_text": "as" },
+    "right_context": { "exact_text": "ī" },
+    "operation": { "op_type": "pararupa" },
+    "governance": { "domain": "sapada" }
+  },
+  {
+    "id": "6.1.73",
+    "name": "che ca",
     "rule_type": "vidhi_sandhi",
-    "priority": 50,
-    "target_context": {
-      "exact_text": "s",
-      "anal_vidhi": true
-    },
-    "operation": {
-      "op_type": "substitute",
-      "substitute": "H"
-    },
-    "governance": {
-      "domain": "tripadi"
-    }
+    "priority": 120,
+    "left_context": { "phonetic_class": "vowel" },
+    "right_context": { "exact_text": "ch" },
+    "operation": { "op_type": "tuk_agama" },
+    "governance": { "domain": "sapada" }
+  },
+  {
+    "id": "6.1.15",
+    "name": "vaci-svapi-yajādināṃ kiti",
+    "rule_type": "vidhi_anga",
+    "priority": 140,
+    "left_context": { "exact_text": "vac" },
+    "right_context": { "exact_text": "ta" },
+    "operation": { "op_type": "samprasarana" },
+    "governance": { "domain": "sapada" }
+  },
+  {
+    "id": "8.2.39",
+    "name": "jhalam jasonte",
+    "rule_type": "vidhi_sandhi",
+    "priority": 300,
+    "left_context": { "pratyahara": "jhaL" },
+    "operation": { "op_type": "jhalam_jaso" },
+    "governance": { "domain": "tripadi" }
+  },
+  {
+    "id": "8.3.23",
+    "name": "monusvarah",
+    "rule_type": "vidhi_sandhi",
+    "priority": 310,
+    "left_context": { "exact_text": "m" },
+    "right_context": { "pratyahara": "haL" },
+    "operation": { "op_type": "mo_anusvarah" },
+    "governance": { "domain": "tripadi" }
+  },
+  {
+    "id": "8.3.32",
+    "name": "ngamo hrasvad aci ngamun nityam",
+    "rule_type": "vidhi_sandhi",
+    "priority": 320,
+    "left_context": { "phonetic_class": "nasal" },
+    "right_context": { "pratyahara": "aC" },
+    "operation": { "op_type": "ngamut_agama" },
+    "governance": { "domain": "tripadi" }
+  },
+  {
+    "id": "8.4.41",
+    "name": "stuna stuh",
+    "rule_type": "vidhi_sandhi",
+    "priority": 330,
+    "left_context": { "exact_text": ["ṣ", "ṭ", "ḍ", "ṣaṣ"] },
+    "right_context": { "exact_text": ["n", "nām"] },
+    "operation": { "op_type": "stutva" },
+    "governance": { "domain": "tripadi" }
+  },
+  {
+    "id": "8.4.60",
+    "name": "torli",
+    "rule_type": "vidhi_sandhi",
+    "priority": 340,
+    "left_context": { "exact_text": ["t", "d", "n"] },
+    "right_context": { "exact_text": "l" },
+    "operation": { "op_type": "torli" },
+    "governance": { "domain": "tripadi" }
+  },
+  {
+    "id": "8.4.62",
+    "name": "jhayo honyatarasyam",
+    "rule_type": "vidhi_sandhi",
+    "priority": 350,
+    "left_context": { "pratyahara": "jhaY" },
+    "right_context": { "exact_text": "h" },
+    "operation": { "op_type": "jhayo_ho" },
+    "governance": { "domain": "tripadi" }
+  },
+  {
+    "id": "8.4.14",
+    "name": "upasargad asamasepi nopadesasya",
+    "rule_type": "vidhi_sandhi",
+    "priority": 360,
+    "left_context": { "exact_text": "pra" },
+    "right_context": { "exact_text": "nāyakaḥ" },
+    "operation": { "op_type": "natva" },
+    "governance": { "domain": "tripadi" }
+  },
+  {
+    "id": "8.3.34",
+    "name": "visarjanyasya sah",
+    "rule_type": "vidhi_sandhi",
+    "priority": 370,
+    "left_context": { "exact_text": "hariḥ" },
+    "right_context": { "exact_text": "candraḥ" },
+    "operation": { "op_type": "visarga_sandhi" },
+    "governance": { "domain": "tripadi" }
+  },
+  {
+    "id": "INDECLINABLE_R_RETENTION",
+    "name": "pratar r retention",
+    "rule_type": "nipata",
+    "priority": 380,
+    "left_context": { "exact_text": "prātar" },
+    "right_context": { "pratyahara": "aC" },
+    "operation": { "op_type": "indeclinable_r" },
+    "governance": { "domain": "tripadi" }
   }
 ]

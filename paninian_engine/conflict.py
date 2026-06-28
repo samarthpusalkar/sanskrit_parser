@@ -3,6 +3,7 @@ Conflict Resolution and Bahiraṅga Rewind for the Paninian Rewriting Engine.
 Implements exact causal dependency hashing (CausalEnv) and non-fatal ambiguity preservation.
 """
 from __future__ import annotations
+import re
 from typing import Set, List, Dict, Optional, Tuple, Any, FrozenSet, TYPE_CHECKING
 from dataclasses import dataclass, field
 
@@ -22,7 +23,12 @@ class RuleObject:
         visibility_class: str = "NORMAL",
         optionality: bool = False,
         semantic_condition: Optional["LogicalPredicate"] = None,
-        is_nitya: bool = False
+        is_nitya: bool = False,
+        target_context: Optional[Dict[str, Any]] = None,
+        left_context: Optional[Dict[str, Any]] = None,
+        right_context: Optional[Dict[str, Any]] = None,
+        operation: Optional[Dict[str, Any]] = None,
+        governance: Optional[Dict[str, Any]] = None
     ):
         self.sutra_id = sutra_id
         self.conditioning_factors = conditioning_factors
@@ -31,6 +37,11 @@ class RuleObject:
         self.optionality = optionality
         self.semantic_condition = semantic_condition
         self.is_nitya = is_nitya
+        self.target_context = target_context or {}
+        self.left_context = left_context or {}
+        self.right_context = right_context or {}
+        self.operation = operation or {}
+        self.governance = governance or {}
 
     def is_antaranga_relative_to(self, other: "RuleObject") -> bool:
         """
@@ -64,6 +75,17 @@ class CausalEnv:
 
 
 ResolvedConflictSet = Set[Tuple[str, str, int]]
+
+
+def _get_sutra_sort_key(rule: RuleObject) -> Tuple[Tuple[int, ...], str]:
+    nums = [int(n) for n in re.findall(r'\d+', rule.sutra_id)]
+    if len(nums) >= 3:
+        num_key = tuple(nums[:3])
+    elif len(nums) > 0:
+        num_key = tuple(nums) + (0,) * (3 - len(nums))
+    else:
+        num_key = (0, 0, 0)
+    return (num_key, rule.sutra_id)
 
 
 class ConflictResolver:
@@ -104,7 +126,7 @@ class ConflictResolver:
         # If no paribhasas are defined or strict checking fails to break tie definitively:
         if len(candidates) > 1:
             # Check if there is a distinct winner by sūtra order if tradition permits para
-            sorted_candidates = sorted(candidates, key=lambda x: [int(p) if p.isdigit() else p for p in x.sutra_id.split(".")])
+            sorted_candidates = sorted(candidates, key=_get_sutra_sort_key)
             chosen = sorted_candidates[-1]
             # If tie persists or tradition requires explicit resolution that is missing:
             if len(candidates) == 2 and not chosen.optionality and not self.config.paribhasas:

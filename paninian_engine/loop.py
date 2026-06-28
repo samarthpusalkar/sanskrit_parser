@@ -14,6 +14,7 @@ from .visibility import PersistentVisibilityMatrix, AsiddhaDomainPolicy, Visibil
 from .conflict import RuleObject, ConflictResolver, ResolvedConflictSet, ResolutionResult, CausalEnv
 from .vivaksa import VivaksaAST, SemanticConditionEvaluator, SabdabodhaFrame
 from .graph import MorphoPhonemicToken, TokenState, DerivationGraph
+from .phonology import PhonologyBridge
 
 
 @dataclass
@@ -29,6 +30,7 @@ class DerivationState:
     trace:              List[str] = field(default_factory=list)
     rule_id_map:        Dict[int, str] = field(default_factory=dict)
     rule_id_map_inv:    Dict[str, int] = field(default_factory=dict)
+    phonology_bridge:   Optional[PhonologyBridge] = None
     _domains:           Dict[DomainType, List[Any]] = field(default_factory=dict)
 
     def domain_for(self, domain_type: DomainType) -> List[Any]:
@@ -75,6 +77,14 @@ def is_eligible(
         if not evaluator.eval_condition(state.vivaksa, rule.semantic_condition, state):
             return False
 
+    # Phonological bridge pairwise check
+    if state.phonology_bridge and len(state.tokens) >= 2:
+        t0 = state.tokens[0].graph.get(state.tokens[0].current_state_id).phoneme
+        t1 = state.tokens[1].graph.get(state.tokens[1].current_state_id).phoneme
+        if rule.left_context or rule.right_context:
+            if not state.phonology_bridge.check_eligibility_pairwise(t0, t1, rule):
+                return False
+
     # Phonological / structural conditioning factors check
     curr_phonemes = {t.graph.get(t.current_state_id).phoneme for t in state.tokens if t.current_state_id in t.graph._states}
     for factor in rule.conditioning_factors:
@@ -99,8 +109,41 @@ def apply_rule(state: DerivationState, rule: RuleObject) -> DerivationState:
     if new_state.visibility_matrix is None:
         new_state.visibility_matrix = PersistentVisibilityMatrix()
 
-    # Apply mutation
     site_id = "site_0"
+
+    # Execute dynamic phonology bridge if available for pairwise tokens
+    if new_state.phonology_bridge and len(new_state.tokens) >= 2 and (rule.operation or rule.left_context or rule.right_context):
+        t0 = new_state.tokens[0]
+        t1 = new_state.tokens[1]
+        s0 = t0.graph.get(t0.current_state_id)
+        s1 = t1.graph.get(t1.current_state_id)
+        res, mutated = new_state.phonology_bridge.execute_pairwise_sandhi(s0.phoneme, s1.phoneme, rule)
+        if mutated:
+            new_s0 = TokenState(
+                state_id=f"{s0.state_id}_{rule.sutra_id}",
+                phoneme=res,
+                lexical_category=s0.lexical_category,
+                rule_id_applied=rule.sutra_id,
+                parent_ids=frozenset([s0.state_id, s1.state_id])
+            )
+            t0.graph.register(new_s0)
+            t0.current_state_id = new_s0.state_id
+            site_id = s0.state_id
+
+            new_s1 = TokenState(
+                state_id=f"{s1.state_id}_lopa_{rule.sutra_id}",
+                phoneme="",
+                lexical_category=LexicalCategory.LOPA,
+                rule_id_applied=rule.sutra_id,
+                parent_ids=frozenset([s1.state_id])
+            )
+            t1.graph.register(new_s1)
+            t1.current_state_id = new_s1.state_id
+            new_state.applied_rules.append((rule.sutra_id, site_id))
+            new_state.trace.append(f"Applied rule {rule.sutra_id} producing {res}")
+            return new_state
+
+    # Standard fallback mutation
     for t in new_state.tokens:
         curr_state = t.graph.get(t.current_state_id)
         if curr_state.phoneme in rule.conditioning_factors or not rule.conditioning_factors:

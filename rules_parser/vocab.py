@@ -5,8 +5,36 @@ Maps classical Pāṇinian operational terms, technical definitions (Sañjñās)
 meta-rules (Paribhāṣās), and grammatical tokens into formal PrimitiveOp tuples.
 """
 
+import sqlite3
+import os
 from typing import Dict, Any, Tuple, Optional
 from rule_engine.dsl import PrimitiveOp
+
+
+def _query_db_term(term_slp: str) -> Optional[Tuple[PrimitiveOp, str, str]]:
+    db_path = "data/sanskrit_master.db"
+    if not os.path.exists(db_path):
+        return None
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT category, replacement FROM technical_terms WHERE term=?", (term_slp,))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            cat, repl = row
+            if cat == "ELISION":
+                op = PrimitiveOp(left_consume=1, right_consume=0, emit="", emit_side="left", compute_fn=None, substitute="", op_type="elide")
+                return op, "elide", ""
+            elif cat == "EKADESHA":
+                op = PrimitiveOp(left_consume=1, right_consume=1, emit="", emit_side="left", compute_fn=repl, substitute=repl, op_type=f"ekadesha_{repl}")
+                return op, f"ekadesha_{repl}", repl
+            elif cat == "LITERAL":
+                op = PrimitiveOp(left_consume=1, right_consume=0, emit=repl, emit_side="left", compute_fn=None, substitute=repl, op_type="substitute")
+                return op, "substitute", repl
+    except Exception:
+        pass
+    return None
 
 
 # Classical Pāṇinian terms indicating elision / deletion (Lopa and its subtypes)
@@ -62,6 +90,10 @@ def resolve_term_to_primitive(term_slp: str, is_ekadesha: bool = False, right_co
     """
     Given an operational term in SLP1, returns (PrimitiveOp, op_type, substitute).
     """
+    db_res = _query_db_term(term_slp)
+    if db_res:
+        return db_res
+
     norm = term_slp[:-1] if term_slp.endswith(("s", "H")) else term_slp
 
     if term_slp in PROHIBITION_TERMS or norm in PROHIBITION_TERMS:
