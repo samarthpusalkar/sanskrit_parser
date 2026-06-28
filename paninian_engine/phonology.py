@@ -22,17 +22,31 @@ def normalize_vowel_for_pratyahara(char: str) -> str:
     return char
 
 
-def _normalize_pratyahara_name(prat: str) -> str:
-    p = prat.lower()
-    mapping = {
-        'ac': 'ac', 'hal': 'hl',
-        'ik': 'ik', 'ak': 'ak', 'ec': 'ec',
-        'yan': 'yṇ', 'yaṇ': 'yṇ',
-        'jhal': 'jhl', 'jas': 'jś', 'jaś': 'jś',
-        'ngam': 'ṅm', 'ṅam': 'ṅm',
-        'jhay': 'jhy'
-    }
-    return mapping.get(p, prat)
+def _lookup_pratyahara_canonical(prat: str, db_path: str) -> str:
+    """
+    Resolve a pratyāhāra alias (e.g. 'aC', 'haL', 'iK') to its canonical
+    internal form used by PratyaharaEngine, via the `pratyahara_lexicon` table.
+
+    This is a fallback only — called when PratyaharaEngine.expand(prat) returns
+    an empty set. The lexicon itself is bootstrapped from the Māheśvara sūtras
+    and the Śivasūtras, not hardcoded.
+    """
+    if not os.path.exists(db_path):
+        return prat
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("SELECT canonical FROM pratyahara_lexicon WHERE alias=?", (prat,))
+        row = cur.fetchone()
+        if not row:
+            cur.execute("SELECT canonical FROM pratyahara_lexicon WHERE alias=?", (prat.lower(),))
+            row = cur.fetchone()
+        conn.close()
+        if row:
+            return row[0]
+    except Exception:
+        pass
+    return prat
 
 
 class PhonologyBridge:
@@ -43,8 +57,12 @@ class PhonologyBridge:
     def _is_in_pratyahara(self, char: str, pratyahara: str) -> bool:
         if not self.pe or not char:
             return False
-        norm_prat = _normalize_pratyahara_name(pratyahara)
-        expanded = self.pe.expand(norm_prat)
+        expanded = self.pe.expand(pratyahara)
+        if not expanded:
+            # Fallback: resolve alias via pratyahara_lexicon table, then retry
+            canonical = _lookup_pratyahara_canonical(pratyahara, self.db_path)
+            if canonical != pratyahara:
+                expanded = self.pe.expand(canonical)
         norm_char = normalize_vowel_for_pratyahara(char)
         return norm_char in expanded or char in expanded
 
@@ -153,8 +171,11 @@ class PhonologyBridge:
                 if self.pe:
                     canonical_ik = ['i', 'u', 'ṛ', 'ḷ']
                     canonical_yan = ['y', 'v', 'r', 'l']
-                    exp_ik = self.pe.expand(_normalize_pratyahara_name("iK"))
-                    exp_yan = self.pe.expand(_normalize_pratyahara_name("yaN"))
+                    # Try expanding pratyāhāra directly; fall back to pratyahara_lexicon alias
+                    exp_ik = self.pe.expand("iK") or self.pe.expand(
+                        _lookup_pratyahara_canonical("iK", self.db_path))
+                    exp_yan = self.pe.expand("yaN") or self.pe.expand(
+                        _lookup_pratyahara_canonical("yaN", self.db_path))
                     ik_list = [c for c in canonical_ik if c in exp_ik]
                     yan_list = [c for c in canonical_yan if c in exp_yan]
                     norm1 = normalize_vowel_for_pratyahara(v1)
