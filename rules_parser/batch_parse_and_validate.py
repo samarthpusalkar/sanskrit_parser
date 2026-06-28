@@ -20,17 +20,26 @@ def run_batch_validation(db_path: str = "data/sanskrit_master.db", update_db: bo
     cur = conn.cursor()
 
     if update_db:
-        cur.execute('UPDATE rule_configs SET source="seed" WHERE sutra_id IN ("8.3.17", "8.3.32")')
-        cur.execute('DELETE FROM rule_configs WHERE sutra_id IN ("8.3.12", "6.1.94.v1", "8.2.30", "8.2.40", "8.4.41", "8.4.60", "8.4.62", "8.4.63", "6.1.76", "6.1.15")')
+        cur.execute('DELETE FROM rule_configs WHERE sutra_id IN ("8.3.17", "8.3.32", "8.3.12", "6.1.94.v1", "6.1.94.v2", "6.1.89.v1", "8.2.30", "8.2.40", "8.4.41", "8.4.55", "8.4.60", "8.4.62", "8.4.63", "6.1.76", "6.1.15", "8.3.25", "8.4.39", "6.1.125.v1", "6.1.125.v2", "6.1.125.v3")')
         cur.execute('DELETE FROM rule_configs WHERE sutra_id="6.1.101" AND name="akaḥ_savarṇe_dīrghaḥ_f"')
         seed_rules = [
             ('8.3.12', 'kAnAmreqite', 'n', 'kA', 'kAn', 'exact_substitute', 'Ms', 'samhita', 'seed', 1, 0, 'Ms', 'left', None),
+            ('6.1.89.v1', 'akzAd UhinyAm upasaNKyAnam', 'akza', None, 'UhinI', 'merge', 'OhiRI', 'samhita', 'seed', 1, 5, 'OhiRI', 'left', None),
             ('6.1.94.v1', 'SakandvAdizu pararUpam', 'manas', None, 'I', 'merge', 'I', 'samhita', 'seed', 2, 1, 'I', 'left', None),
+            ('6.1.94.v2', 'SakandvAdizu pararUpam_Saka', 'a', 'Sak', 'anDu', 'merge', 'a', 'samhita', 'seed', 1, 1, 'a', 'left', None),
             ('6.1.101', 'akaḥ_savarṇe_dīrghaḥ_f', 'f|F', None, 'f|F', 'merge', 'F', 'samhita', 'seed', 1, 1, 'F', 'left', None),
+            ('6.1.125.v1', 'plutapragfhyA aci nityam_nipata', 'i|u|e|o', 'TOKEN:i|u|e|o|aho|uho|he|are', 'PRAT:aC', 'prohibit', 'prohibit', 'samhita', 'seed', 0, 0, '', 'left', None),
+            ('6.1.125.v2', 'plutapragfhyA aci nityam_adas', 'I|U', 'TOKEN:amI|amU', 'PRAT:aC', 'prohibit', 'prohibit', 'samhita', 'seed', 0, 0, '', 'left', None),
+            ('6.1.125.v3', 'plutapragfhyA aci nityam_pluta', '3', None, 'PRAT:aC', 'prohibit', 'prohibit', 'samhita', 'seed', 0, 0, '', 'left', None),
             ('8.2.30', 'coH kuH', 'c|C|j|J', None, 't|T|d|D|m|n|v|y|r|l|s|z|S', 'bijection_substitute', 'k|K|g|G', 'tripadi', 'seed', 1, 0, 'k|K|g|G', 'left', 'bijection'),
             ('8.2.40', 'JazastaTorDo.DaH', 't|T', 'Q|D|B|G|J', None, 'right_substitute', 'D', 'tripadi', 'seed', 0, 1, 'D', 'right', None),
+            ('8.3.17', 'BoBagoaGoapUrvasya yo.Si', 's|H|r', 'a|A|o', 'PRAT:aS', 'elide', '', 'tripadi', 'seed', 1, 0, '', 'left', None),
+            ('8.3.25', 'mo rAji samaH kvO', 'm', 'sa', 'rA', 'prohibit', 'prohibit', 'tripadi', 'seed', 0, 0, '', 'left', None),
+            ('8.3.32', 'Namo hrasvAdaci NamuRnityam', 'N|R|n', 'a|i|u|f|x', 'PRAT:aC', 'augment', 'Namuw', 'samhita', 'seed', 0, 0, '', 'left', 'duplicate'),
+            ('8.4.39', 'kzuBnAdizu ca', 'TOKEN:kzuBna', None, None, 'prohibit', 'prohibit', 'tripadi', 'seed', 0, 0, '', 'left', None),
             ('8.4.41', 'zwunA zwuH_rev', 't|T|d|D|n', 'z|w|W|q|Q|R', None, 'bijection_right_substitute', 'w|W|q|Q|R', 'tripadi', 'seed', 0, 1, 'w|W|q|Q|R', 'right', 'bijection'),
             ('8.4.41', 'zwunA zwuH_fwd', 's|t|T|d|D|n', None, 'z|w|W|q|Q|R', 'bijection_substitute', 'z|w|W|q|Q|R', 'tripadi', 'seed', 1, 0, 'z|w|W|q|Q|R', 'left', 'bijection'),
+            ('8.4.55', 'Kari ca', 'g|G|j|J|q|Q|d|D|b|B', None, 'k|K|c|C|w|W|t|T|p|P|s|z|S', 'bijection_substitute', 'k|k|c|c|w|w|t|t|p|p', 'tripadi', 'seed', 1, 0, 'k|k|c|c|w|w|t|t|p|p', 'left', 'bijection'),
             ('8.4.60', 'torli_td', 't|T|d|D', None, 'l', 'substitute', 'l', 'tripadi', 'seed', 1, 0, 'l', 'left', None),
             ('8.4.60', 'torli_n', 'n', None, 'l', 'substitute', 'Ml', 'tripadi', 'seed', 1, 0, 'Ml', 'left', None),
             ('8.4.62', 'Jayo ho.nyatarasyAm', 'h', 't|T|d|D', None, 'right_substitute', 'D', 'tripadi', 'seed', 0, 1, 'D', 'right', None),

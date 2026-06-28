@@ -41,8 +41,19 @@ class Accent(Enum):
 # SLP1 Vowel Sets
 SHORT_VOWELS = frozenset({'a', 'i', 'u', 'f', 'x'})  # a, i, u, ṛ, ḷ
 LONG_VOWELS = frozenset({'A', 'I', 'U', 'F', 'X', 'e', 'E', 'o', 'O'})
+PLUTA_MARKER = '3'  # 3-mora prolongation marker per Pāṇini 1.2.27
 VOWELS = SHORT_VOWELS | LONG_VOWELS
 VISARGA_ALLOPHONES = frozenset({'H', 'ḥ', 's'})
+
+
+def ends_with_vowel(word: str) -> bool:
+    """Check if word ends in a vowel or pluta prolonged vowel."""
+    return bool(word) and (word[-1] in VOWELS or word[-1] == PLUTA_MARKER)
+
+
+def starts_with_vowel(word: str) -> bool:
+    """Check if word begins with a vowel."""
+    return bool(word) and word[0] in VOWELS
 
 # Guna and Vriddhi tables (SLP1)
 GUNA_MAP = {

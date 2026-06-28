@@ -102,7 +102,7 @@ class CompiledVidhiRule(PaniniRule):
         if prim.op_type in {"external_block", "non_operational"}:
             return False
 
-        if not self.spec.target_context.pratyahara and not self.spec.target_context.exact_text and prim.op_type != "governance":
+        if not self.spec.target_context.pratyahara and not self.spec.target_context.exact_text and not getattr(self.spec.target_context, "tokens_required", None) and prim.op_type != "governance":
             return False
         if prim.emit_side == "right":
             t_cond = self.spec.target_context
@@ -137,7 +137,9 @@ class CompiledVidhiRule(PaniniRule):
         if not text:
             return False
         if getattr(cond, "tokens_required", None):
-            return text in cond.tokens_required
+            words = text.split()
+            last_word = words[-1] if words else text
+            return text in cond.tokens_required or last_word in cond.tokens_required
         ctx_str = text[:-1] if len(text) > 1 and boundary_char != text[-1] else text
         char_to_check = ctx_str[0] if cond.match_pos == "start" else boundary_char
         if cond.pratyahara:
@@ -157,6 +159,10 @@ class CompiledVidhiRule(PaniniRule):
             return True
         if not right_str:
             return False
+        if getattr(rgt, "tokens_required", None):
+            words = right_str.split()
+            first_word = words[0] if words else right_str
+            return right_str in rgt.tokens_required or first_word in rgt.tokens_required
         r_char = right_str[0]
         if rgt.pratyahara:
             return PratyaharaResolver.contains(rgt.pratyahara, r_char)

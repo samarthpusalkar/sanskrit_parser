@@ -65,12 +65,16 @@ class UniversalRuleEngine:
                         if ctx_obj.pratyahara:
                             specificity += 1
 
+            op_obj = getattr(spec, "operation", None) if spec else None
+            op_type = getattr(op_obj, "op_type", "") if op_obj else ""
+            is_prohibit = 0 if op_type in {"prohibit", "prakritibhava"} else 1
+
             # Sūtra ordering: Sapāda respects vipratiṣedhe paraṃ kāryam (1.4.2, later prevails -> -num_id)
             # Tripādī executes sequentially (8.2.1 pūrvatrāsiddham -> num_id)
             sutra_order = num_id if domain_rank == 1 else -num_id
             if domain_rank == 1:
-                return (domain_rank, sutra_order, -specificity)
-            return (domain_rank, -specificity, sutra_order)
+                return (domain_rank, is_prohibit, sutra_order, -specificity)
+            return (domain_rank, is_prohibit, -specificity, sutra_order)
 
         rules_pool = []
         if scope == "external":
@@ -121,6 +125,9 @@ class UniversalRuleEngine:
             if r.sutra_id in applied_rules:
                 continue
             if r.matches(cur_l, cur_r, ctx):
+                op_type = getattr(getattr(r, "spec", None), "operation", None)
+                if op_type and getattr(op_type, "op_type", "") in {"prohibit", "prakritibhava"}:
+                    return cur_l, cur_r
                 new_l, new_r = r.apply(cur_l, cur_r, ctx)
                 if new_l != cur_l or new_r != cur_r:
                     cur_l, cur_r = new_l, new_r
