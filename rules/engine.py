@@ -48,39 +48,55 @@ class UniversalRuleEngine:
                 num_id = 999999.0
 
             # Tripādī domain (8.2.1 onwards = 80200) vs Sapādāsaptādhyāyī
-            domain = getattr(spec, "governance", {}).get("domain", "sapada") if spec else "sapada"
+            domain = getattr(spec, "governance", {}).get("domain", "sapada") if spec and isinstance(getattr(spec, "governance", None), dict) else getattr(getattr(spec, "governance", None), "domain", "sapada")
             domain_rank = 1 if domain == "tripadi" or num_id >= 80200.0 else 0
 
-            # Structural Specificity count (Apavāda over Utsarga)
-            specificity = 0
-            if spec:
-                for ctx_obj in [spec.left_context, spec.right_context, spec.target_context]:
-                    if ctx_obj:
-                        if getattr(ctx_obj, "tokens_required", None):
-                            specificity += sum(len(t) * 3 for t in ctx_obj.tokens_required)
-                        if ctx_obj.exact_text:
-                            specificity += len(ctx_obj.exact_text) * 2
-                        if ctx_obj.features_required:
-                            specificity += len(ctx_obj.features_required)
-                        if ctx_obj.pratyahara:
-                            specificity += 1
+            def _get_specificity(r: PaniniRule) -> float:
+                sp = getattr(r, "spec", None)
+                s = 0.0
+                if sp:
+                    for ctx_obj in [sp.left_context, sp.right_context, sp.target_context]:
+                        if ctx_obj:
+                            if getattr(ctx_obj, "tokens_required", None):
+                                s += sum(100.0 / len(t) for t in ctx_obj.tokens_required)
+                            if ctx_obj.exact_text:
+                                if ctx_obj.exact_text in {"PAUSE_OR_VOICED", "LONG_VOWEL", "SHORT_VOWEL", "C", "V"}:
+                                    s += 2.0
+                                else:
+                                    s += 100.0 / (ctx_obj.exact_text.count("|") + 1)
+                            if ctx_obj.features_required:
+                                s += len(ctx_obj.features_required) * 10.0
+                            if ctx_obj.pratyahara:
+                                s += 5.0
+                return s
 
             op_obj = getattr(spec, "operation", None) if spec else None
             op_type = getattr(op_obj, "op_type", "") if op_obj else ""
             is_prohibit = 0 if op_type in {"prohibit", "prakritibhava"} else 1
 
-            # Sūtra ordering: Sapāda respects vipratiṣedhe paraṃ kāryam (1.4.2, later prevails -> -num_id)
-            # Tripādī executes sequentially (8.2.1 pūrvatrāsiddham -> num_id)
             sutra_order = num_id if domain_rank == 1 else -num_id
             if domain_rank == 1:
-                return (domain_rank, is_prohibit, sutra_order, -specificity)
-            return (domain_rank, is_prohibit, -specificity, sutra_order)
+                return (domain_rank, is_prohibit, sutra_order, -_get_specificity(r))
+            return (domain_rank, is_prohibit, -_get_specificity(r), sutra_order)
+
+        def _is_sandhi_rule(r: PaniniRule) -> bool:
+            spec = getattr(r, "spec", None)
+            op = getattr(spec.operation, "op_type", "") if spec and spec.operation else ""
+            if op in {"non_operational", "governance", "sanjna_substitute"}:
+                return False
+            gov = getattr(spec, "governance", {})
+            source = gov.get("source", "") if isinstance(gov, dict) else getattr(gov, "source", "")
+            if source == "seed":
+                return True
+            dom = gov.get("domain", "") if isinstance(gov, dict) else getattr(gov, "domain", "")
+            if dom in {"samhita", "tripadi"}:
+                return True
+            return False
 
         rules_pool = []
         if scope == "external":
             for r in self._rules:
-                dom = getattr(r, "domain", "")
-                if dom in {"samhita", "tripadi"}:
+                if _is_sandhi_rule(r):
                     rules_pool.append(r)
         else:
             rules_pool = self._rules
@@ -95,7 +111,7 @@ class UniversalRuleEngine:
         cur_l, cur_r = left, right
         
         ordered = self._get_sandhi_ordered_rules(scope=scope)
-        sapada_rules = [r for r in ordered if getattr(r.spec.governance, "domain", "sapada") != "tripadi" and not r.sutra_id.startswith("8.2") and not r.sutra_id.startswith("8.3") and not r.sutra_id.startswith("8.4")]
+        sapada_rules = [r for r in ordered if getattr(getattr(r, "spec", None), "governance", {}).get("domain", "sapada") != "tripadi" and not (r.sutra_id.startswith("8.2") or r.sutra_id.startswith("8.3") or r.sutra_id.startswith("8.4"))]
         tripadi_rules = [r for r in ordered if r not in sapada_rules]
 
         applied_rules = set()
@@ -120,21 +136,48 @@ class UniversalRuleEngine:
             if not mutated:
                 break
 
-        # Phase 2: Tripādī (Strictly sequential, no restarts)
-        for r in tripadi_rules:
-            if r.sutra_id in applied_rules:
-                continue
-            if r.matches(cur_l, cur_r, ctx):
-                op_type = getattr(getattr(r, "spec", None), "operation", None)
-                if op_type and getattr(op_type, "op_type", "") in {"prohibit", "prakritibhava"}:
-                    return cur_l, cur_r
-                new_l, new_r = r.apply(cur_l, cur_r, ctx)
-                if new_l != cur_l or new_r != cur_r:
-                    cur_l, cur_r = new_l, new_r
-                    applied_rules.add(r.sutra_id)
-                    # We do NOT break here. Tripādī is strictly linear.
+        def _get_spec(r: PaniniRule) -> float:
+            sp = getattr(r, "spec", None)
+            s = 0.0
+            if sp:
+                for ctx_obj in [sp.left_context, sp.right_context, sp.target_context]:
+                    if ctx_obj:
+                        if getattr(ctx_obj, "tokens_required", None):
+                            s += sum(100.0 / len(t) for t in ctx_obj.tokens_required)
+                        if ctx_obj.exact_text:
+                            if ctx_obj.exact_text in {"PAUSE_OR_VOICED", "LONG_VOWEL", "SHORT_VOWEL", "C", "V"}:
+                                s += 2.0
+                            else:
+                                s += 100.0 / (ctx_obj.exact_text.count("|") + 1)
+                        if ctx_obj.features_required:
+                            s += len(ctx_obj.features_required) * 10.0
+                        if ctx_obj.pratyahara:
+                            s += 5.0
+            return s
+
+        # Phase 2: Tripādī (Iterative feeding per āśrayāt siddhatvam with Apavāda specificity priority)
+        for _ in range(max_steps):
+            mutated = False
+            matches = []
+            for r in tripadi_rules:
+                if r.sutra_id in applied_rules:
+                    continue
+                if r.matches(cur_l, cur_r, ctx):
+                    op_type = getattr(getattr(r, "spec", None), "operation", None)
+                    if op_type and getattr(op_type, "op_type", "") in {"prohibit", "prakritibhava"}:
+                        return cur_l, cur_r
+                    if r.apply(cur_l, cur_r, ctx) != (cur_l, cur_r):
+                        matches.append(r)
+            if not matches:
+                break
+            best_r = max(matches, key=_get_spec)
+            new_l, new_r = best_r.apply(cur_l, cur_r, ctx)
+            cur_l, cur_r = new_l, new_r
+            applied_rules.add(best_r.sutra_id)
+            mutated = True
 
         return cur_l, cur_r
+
 
     def dispatch_revert(self, surface: str, context: Dict[str, Any] = None) -> List[Tuple[str, str]]:
         """Compute all possible backward sandhi splits using pre-indexed rule lookup."""
