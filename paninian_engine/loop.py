@@ -103,10 +103,10 @@ def apply_rule(state: DerivationState, rule: RuleObject) -> DerivationState:
     site_id = "site_0"
     for t in new_state.tokens:
         curr_state = t.graph.get(t.current_state_id)
-        if curr_state.phoneme in rule.conditioning_factors or rule.effect_type in ("BHAVATI_TRANSFORM",):
+        if curr_state.phoneme in rule.conditioning_factors or not rule.conditioning_factors:
             new_token_state = TokenState(
                 state_id=f"{curr_state.state_id}_{rule.sutra_id}_{rule.effect_type}",
-                phoneme=rule.effect_type if rule.effect_type != "BHAVATI_TRANSFORM" else "bhavati",
+                phoneme=rule.effect_type,
                 lexical_category=curr_state.lexical_category,
                 rule_id_applied=rule.sutra_id,
                 parent_ids=frozenset([curr_state.state_id])

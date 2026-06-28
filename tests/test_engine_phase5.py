@@ -36,7 +36,7 @@ def test_derive_bhavati_end_to_end():
     )
 
     # Rule producing 'bhavati'
-    rule_bhavati = RuleObject("3.1.68_et_al", {"bhū+tip"}, "BHAVATI_TRANSFORM")
+    rule_bhavati = RuleObject("3.1.68_et_al", {"bhū+tip"}, "bhavati")
 
     terminals = run_derivation(initial_state, [rule_bhavati], config, evaluator, resolver)
     
@@ -50,4 +50,4 @@ def test_derive_bhavati_end_to_end():
 
     # Verify deterministic trace replayability
     assert len(term_state.trace) == 1
-    assert "Applied rule 3.1.68_et_al producing BHAVATI_TRANSFORM" in term_state.trace[0]
+    assert "Applied rule 3.1.68_et_al producing bhavati" in term_state.trace[0]
