@@ -21,7 +21,7 @@ def test_parse_iko_yan_aci():
 
     assert isinstance(spec.operation, PrimitiveOp)
     assert spec.operation.op_type == "exact_substitute"
-    assert spec.operation.substitute == "yaR"
+    assert spec.operation.substitute == "PRAT:yaR"
     assert spec.operation.left_consume == 1
     assert spec.operation.right_consume == 0
 

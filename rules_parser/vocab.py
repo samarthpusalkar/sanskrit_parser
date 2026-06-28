@@ -64,9 +64,13 @@ def resolve_term_to_primitive(term_slp: str, is_ekadesha: bool = False, right_co
         op = PrimitiveOp(left_consume=1, right_consume=0, emit="", emit_side="left", compute_fn=None, substitute="", op_type="elide")
         return op, "elide", ""
 
-    if term_slp in {"pUrvarUpa", "pUrvarUpam"} or norm == "pUrvarUpa":
+    if term_slp in {"pUrvarUpa", "pUrvarUpam", "pUrvaH"} or norm in {"pUrvarUpa", "pUrva"}:
         op = PrimitiveOp(left_consume=0, right_consume=1, emit="'", emit_side="right", compute_fn=None, substitute="'", op_type="purva_rupa")
         return op, "purva_rupa", "'"
+        
+    if term_slp in {"vAntaH", "vAnto"} or norm == "vAnta":
+        op = PrimitiveOp(left_consume=0, right_consume=0, emit="", emit_side="left", compute_fn=None, substitute="", op_type="non_operational")
+        return op, "non_operational", ""
 
     if term_slp in {"pararUpa", "pararUpam"} or norm == "pararUpa":
         op = PrimitiveOp(left_consume=1, right_consume=0, emit="", emit_side="left", compute_fn=None, substitute="", op_type="pararupa")
@@ -100,6 +104,10 @@ def resolve_term_to_primitive(term_slp: str, is_ekadesha: bool = False, right_co
     if term_slp in {"Namuw", "namuw"}:
         op = PrimitiveOp(left_consume=0, right_consume=0, emit="", emit_side="left", compute_fn="duplicate", substitute="", op_type="augment")
         return op, "augment", ""
+
+    if term_slp in {"yaR", "yaRaH"}:
+        op = PrimitiveOp(left_consume=1, right_consume=0, emit="", emit_side="left", compute_fn="bijection", substitute="PRAT:yaR", op_type="exact_substitute")
+        return op, "exact_substitute", "PRAT:yaR"
 
     # Literal replacement check
     sub_val = LITERAL_REPLACEMENTS.get(term_slp, LITERAL_REPLACEMENTS.get(norm, term_slp))

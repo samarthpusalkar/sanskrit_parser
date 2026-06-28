@@ -102,9 +102,15 @@ class CompiledVidhiRule(PaniniRule):
         if prim.op_type in {"external_block", "non_operational"}:
             return False
 
+        if prim.op_type == "ekadesha_savarna_dirgha":
+            from core.phonology import get_sthana
+            if not right or (get_sthana(l_char) != get_sthana(right[0])):
+                return False
+
         if not self.spec.target_context.pratyahara and not self.spec.target_context.exact_text and not getattr(self.spec.target_context, "tokens_required", None) and prim.op_type != "governance":
             return False
-        if prim.emit_side == "right":
+            
+        if prim.emit_side == "right" and prim.op_type not in {"purva_rupa"}:
             t_cond = self.spec.target_context
             if t_cond:
                 if t_cond.pratyahara and not PratyaharaResolver.contains(t_cond.pratyahara, right[0]):

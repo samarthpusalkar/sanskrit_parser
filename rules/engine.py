@@ -71,6 +71,10 @@ class UniversalRuleEngine:
                                 s += len(ctx_obj.features_required) * 10.0
                             if ctx_obj.pratyahara:
                                 s += 5.0
+                    
+                    sp_op = getattr(sp, "operation", None)
+                    if sp_op and getattr(sp_op, "op_type", None) == "ekadesha_savarna_dirgha":
+                        s += 100.0
                 return s
 
             op_obj = getattr(spec, "operation", None) if spec else None
@@ -130,6 +134,12 @@ class UniversalRuleEngine:
                             s += len(ctx_obj.features_required) * 10.0
                         if ctx_obj.pratyahara:
                             s += 5.0
+            
+            # Explicit boost for Savarṇa Dīrgha which is an Apavāda to Guṇa
+            sp_op = getattr(getattr(r, "spec", None), "operation", None)
+            if sp_op and getattr(sp_op, "op_type", None) == "ekadesha_savarna_dirgha":
+                s += 100.0
+
             return s
 
         ordered = self._get_sandhi_ordered_rules(scope=scope)

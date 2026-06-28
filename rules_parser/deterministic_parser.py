@@ -113,6 +113,12 @@ class DeterministicSutraParser:
             except Exception:
                 pass
 
+        if not has_target and not left_cond and not right_cond:
+            prim_op = PrimitiveOp(
+                left_consume=0, right_consume=0, emit="",
+                emit_side="left", compute_fn=None, substitute=None, op_type="non_operational"
+            )
+
         return RuleSpec(
             id=sutra_id,
             name=sutra_name,
