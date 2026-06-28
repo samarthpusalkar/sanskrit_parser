@@ -143,13 +143,49 @@ class CompiledVidhiRule(PaniniRule):
         tgt = self.spec.target_context
         return self._is_config_condition_match(tgt, left, l_char, ctx)
 
-    def _is_config_condition_match(self, cond, text: str, boundary_char: str, ctx: Dict[str, Any] = None) -> bool:
+    def _is_config_condition_match(self, cond, text: str, boundary_char: str, ctx=None) -> bool:
         if not cond:
             return True
         if not text:
             return False
+
+        # --- Sañjñā-based matching (Phase 2: SanjanaTagger integration) ---
+        # Resolve the ExecutionContext (accepts both typed and legacy dict)
+        exec_ctx = None
+        if ctx is not None:
+            from rule_engine.context import ExecutionContext
+            if isinstance(ctx, ExecutionContext):
+                exec_ctx = ctx
+            else:
+                # Legacy dict — wrap it
+                exec_ctx = ExecutionContext.from_dict(ctx)
+
+        if exec_ctx is not None:
+            # sanjña_required: block if the token does NOT carry all required sañjñās
+            sanj_req = getattr(cond, 'sanjña_required', set())
+            if sanj_req:
+                # Determine which side we're checking
+                side = 'right' if getattr(cond, 'match_pos', 'end') == 'start' else 'left'
+                for sanjña in sanj_req:
+                    if not exec_ctx.has_sanjña(side, sanjña):
+                        return False
+            # prohibit_if_sanjña: block if the token carries ANY of these sañjñās
+            prohibit = getattr(cond, 'prohibit_if_sanjña', set())
+            if prohibit:
+                side = 'right' if getattr(cond, 'match_pos', 'end') == 'start' else 'left'
+                if exec_ctx.sanjña_map.get(side, set()).intersection(prohibit):
+                    return False
+            # sthani_phoneme: check the *original* phoneme via DerivationTrace
+            sthani = getattr(cond, 'sthani_phoneme', None)
+            if sthani and exec_ctx.trace:
+                original = exec_ctx.trace.get_original_left_boundary()
+                if original and original != sthani:
+                    return False
+
         if getattr(cond, "tags_required", None) and ctx:
-            if "padanta" in cond.tags_required and not ctx.get("is_padanta", True): # Default to true for now if not explicitly false
+            # Legacy padanta check via raw dict (still supported)
+            raw_ctx = ctx.to_dict() if hasattr(ctx, 'to_dict') else ctx
+            if "padanta" in cond.tags_required and not raw_ctx.get("is_padanta", True):
                 return False
         if getattr(cond, "tokens_required", None):
             words = text.split()
@@ -249,6 +285,17 @@ class CompiledVidhiRule(PaniniRule):
                 emit = self._resolve_literal_substitute(left, prim)
                 if emit is None:
                     return left, right
+        elif prim.compute_fn == "agama":
+            # Āgama: insert a phoneme WITHOUT consuming the boundary char.
+            # augment_position controls where the phoneme goes:
+            #   'after_left'  — append to left boundary (most common, e.g. suṭ insertion)
+            #   'before_right' — prepend to right boundary
+            aug = prim.augment or prim.emit or prim.substitute or ""
+            pos = getattr(prim, 'augment_position', 'after_left')
+            if pos == 'before_right':
+                return left, aug + right
+            else:  # after_left (default)
+                return left + aug, right
 
         # --- Apply primitive: consume + emit ---
         new_left = left[:-prim.left_consume] if prim.left_consume else left

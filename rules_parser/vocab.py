@@ -41,10 +41,22 @@ LITERAL_REPLACEMENTS = {
     "ru": "r", "roH": "r", "rePa": "r",
     "anusvAra": "M", "anusvAraH": "M",
     "anunAsika": "~", "anunAsikaH": "~",
-    "ut": "u", "it": "i", "at": "a", "At": "A",
-    "wuk": "w", "suw": "s", "nuw": "n", "tuk": "t", "iw": "i", "Namuw": "Namuw"
+    "ut": "u", "it": "i", "at": "a", "At": "A"
 }
 
+# Augments (āgama) with their positional semantics
+# 1.1.46 (ādyantau ṭakitau): ṭ-it -> initial (before_right), k-it -> final (after_left)
+# 1.1.47 (mid aco 'ntyāt paraḥ): m-it -> after last vowel
+AGAMAS = {
+    "wuk": ("t", "before_right"),
+    "suw": ("s", "before_right"),
+    "nuw": ("n", "before_right"),
+    "tuk": ("t", "after_left"),
+    "iw": ("i", "before_right"),
+    "NamuR": ("N", "after_left"),
+    "NamuRnityam": ("N", "after_left"),
+    "Num": ("n", "after_last_vowel"),
+}
 
 def resolve_term_to_primitive(term_slp: str, is_ekadesha: bool = False, right_cond_present: bool = False) -> Tuple[PrimitiveOp, str, str]:
     """
@@ -104,6 +116,13 @@ def resolve_term_to_primitive(term_slp: str, is_ekadesha: bool = False, right_co
     if term_slp in {"Namuw", "namuw"}:
         op = PrimitiveOp(left_consume=0, right_consume=0, emit="", emit_side="left", compute_fn="duplicate", substitute="", op_type="augment")
         return op, "augment", ""
+
+    # Check for agamas (augments)
+    aug_val = AGAMAS.get(term_slp, AGAMAS.get(norm))
+    if aug_val:
+        phoneme, position = aug_val
+        op = PrimitiveOp(left_consume=0, right_consume=0, emit="", emit_side="left", compute_fn="agama", substitute="", augment=phoneme, augment_position=position, op_type="augment")
+        return op, "augment", phoneme
 
     from compiler.ast_builder import SutraAstBuilder
     prat = SutraAstBuilder._resolve_pratyahara(term_slp)

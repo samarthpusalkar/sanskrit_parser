@@ -23,6 +23,11 @@ class ConditionSpec:
     anal_vidhi: bool = False                   # If True, strictly checks leaf phonemes
     match_pos: str = "end"                     # 'end' checks last char, 'start' checks first char
     savarna_with_target: bool = False          # If True, enforces 1.1.9 homogeneous match
+    # --- Sañjñā / derivation-aware matching fields (Phase 1 additions) ---
+    sanjña_required: Set[str] = field(default_factory=set)    # Token must carry these sañjñā tags
+    prohibit_if_sanjña: Set[str] = field(default_factory=set) # Block if token has ANY of these sañjñās
+    sthani_phoneme: Optional[str] = None  # Match original (sthāni) phoneme via DerivationTrace
+    morphological_category: Optional[str] = None  # 'avyaya', 'nipata', 'dhatu', 'sup', etc.
 
     def matches(self, token: DagToken) -> bool:
         """Evaluate if token satisfies this condition."""
@@ -86,16 +91,23 @@ class PrimitiveOp:
     - If `compute_fn` is set, compute the emit value dynamically
 
     compute_fn is a CLOSED set from Pāṇini's finite operation vocabulary:
-    NULL, 'guna', 'vriddhi', 'dirgha', 'savarna_long', 'bijection', 'natva', 'shatva'
+    NULL, 'guna', 'vriddhi', 'dirgha', 'savarna_long', 'bijection', 'natva', 'shatva', 'agama'
     """
     left_consume: int = 0
     right_consume: int = 0
     emit: str = ""
     emit_side: str = "left"         # 'left' or 'right'
-    compute_fn: Optional[str] = None  # NULL, 'guna', 'vriddhi', 'dirgha', 'savarna_long', 'bijection', 'natva', 'shatva'
+    compute_fn: Optional[str] = None  # NULL, 'guna', 'vriddhi', 'dirgha', 'savarna_long', 'bijection', 'natva', 'shatva', 'agama'
     # Kept for bijection resolution and revert compatibility
     substitute: Optional[str] = None
     op_type: Optional[str] = None   # legacy label, kept for revert index
+    # --- Āgama (augment/insertion) fields (Phase 1 additions) ---
+    augment: Optional[str] = None             # Phoneme(s) to insert (āgama)
+    augment_position: str = "after_left"      # 'after_left', 'before_right', 'before_target'
+    # --- Nipātana (lexical exception) flag ---
+    is_nipātana: bool = False                 # If True, engine performs lexicon lookup instead of rule matching
+    # --- Derivation tag for sthānivadbhāva propagation ---
+    derivation_tag: Optional[str] = None      # Tag attached to output phoneme for downstream rule matching
 
     @classmethod
     def from_legacy(cls, op_type: str, substitute: Optional[str] = None) -> 'PrimitiveOp':
@@ -119,6 +131,8 @@ class PrimitiveOp:
             "governance":               (0, 0, "",    "left",  None),
             "prohibit":                 (0, 0, "",    "left",  None),
             # Computed operations
+            "augment":                  (0, 0, sub,   "left",  "agama"),
+            "agama":                    (0, 0, sub,   "left",  "agama"),
             "dirgha":                   (1, 1, "",    "left",  "dirgha"),
             "ekadesha_savarna_dirgha":  (1, 1, "",    "left",  "dirgha"),
             "merge_savarna":            (1, 1, "",    "left",  "dirgha"),

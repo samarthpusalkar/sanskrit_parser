@@ -29,6 +29,7 @@ class UniversalRuleEngine:
         self._rules: List[PaniniRule] = []
         self._ordered_cache: Dict[str, List[PaniniRule]] = {}
         self._revert_cache: Dict[str, List[Tuple[str, str]]] = {}
+        self._nipatana_cache: Optional[Dict] = None
         if auto_compile:
             from compiler.pipeline import MasterCompilerPipeline
             self._rules.extend(MasterCompilerPipeline.compile_all())
@@ -37,6 +38,40 @@ class UniversalRuleEngine:
         self._rules.append(rule)
         self._ordered_cache.clear()
         self._revert_cache.clear()
+
+    # ------------------------------------------------------------------
+    # Nipātana Lexicon  (Phase 0)
+    # ------------------------------------------------------------------
+
+    def _load_nipatana(self) -> Dict:
+        """Load nipātana_lexicon table from DB (cached)."""
+        if self._nipatana_cache is not None:
+            return self._nipatana_cache
+        import sqlite3, os
+        db = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "sanskrit_master.db")
+        self._nipatana_cache = {}
+        if os.path.exists(db):
+            try:
+                conn = sqlite3.connect(db)
+                for row in conn.execute("SELECT left_token, right_token, output FROM nipatana_lexicon"):
+                    lt, rt, out = row
+                    self._nipatana_cache[(lt, rt or "")] = out
+                conn.close()
+            except Exception:
+                pass
+        return self._nipatana_cache
+
+    def _nipatana_lookup(self, left: str, right: str) -> Optional[str]:
+        """Return prescribed Nipātana output or None."""
+        lex = self._load_nipatana()
+        for key in [(left, right), (left, "")]:
+            if key in lex:
+                return lex[key]
+        return None
+
+    # ------------------------------------------------------------------
+    # Rule ordering helpers
+    # ------------------------------------------------------------------
 
     def _get_sandhi_ordered_rules(self, scope: str = "external") -> List[PaniniRule]:
         if scope in self._ordered_cache:
@@ -50,7 +85,6 @@ class UniversalRuleEngine:
             except Exception:
                 num_id = 999999.0
 
-            # Tripādī domain (8.2.1 onwards = 80200) vs Sapādāsaptādhyāyī
             domain = getattr(spec, "governance", {}).get("domain", "sapada") if spec and isinstance(getattr(spec, "governance", None), dict) else getattr(getattr(spec, "governance", None), "domain", "sapada")
             domain_rank = 1 if domain == "tripadi" or num_id >= 80200.0 else 0
 
@@ -107,88 +141,163 @@ class UniversalRuleEngine:
         self._ordered_cache[scope] = ordered
         return ordered
 
+    # ------------------------------------------------------------------
+    # Specificity scorer
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _get_spec(r: PaniniRule) -> float:
+        sp = getattr(r, "spec", None)
+        s = 0.0
+        if sp:
+            for ctx_obj in [sp.left_context, sp.right_context, sp.target_context]:
+                if ctx_obj:
+                    if getattr(ctx_obj, "tokens_required", None):
+                        s += sum(1000.0 for _ in ctx_obj.tokens_required)
+                    if ctx_obj.exact_text:
+                        if ctx_obj.exact_text in {"PAUSE_OR_VOICED", "LONG_VOWEL", "SHORT_VOWEL", "C", "V", "VOWEL", "CONSONANT"}:
+                            s += 2.0
+                        else:
+                            s += 100.0 / (ctx_obj.exact_text.count("|") + 1)
+                    if ctx_obj.features_required:
+                        s += len(ctx_obj.features_required) * 10.0
+                    if ctx_obj.pratyahara:
+                        s += 5.0
+        return s
+
+    # ------------------------------------------------------------------
+    # Forward dispatch
+    # ------------------------------------------------------------------
+
     def dispatch_forward(self, left: str, right: str, context: Dict[str, Any] = None) -> Tuple[str, str]:
-        """Apply sequential forward sandhi/morphological transformation rules."""
-        ctx = context or {}
-        scope = ctx.get("scope", "external")
+        """
+        Apply sequential forward sandhi/morphological transformation rules.
+
+        Execution phases (Pāṇinian order):
+          Phase 0 — Nipātana check (lexicon override before any rules)
+          Phase 1 — Sañjñā tagging (compute token-level labels)
+          Phase 2 — Prakṛtibhāva check (Pragṛhya: no sandhi at all)
+          Phase 3 — Sapādāsaptādhyāyī (rules 1.1–8.1, highest-spec first)
+          Phase 4 — Tripādī (rules 8.2–8.4, strict chapter order + asiddhatva)
+        """
+        from rule_engine.context import ExecutionContext
+        from rule_engine.trace import DerivationTrace
+        from core.sanjña_tagger import SanjanaTagger
+
+        raw_ctx = context or {}
+        is_samasa = raw_ctx.get("is_samasa", False)
+
+        exec_ctx = ExecutionContext(
+            left_token=left,
+            right_token=right,
+            is_samasa=is_samasa,
+        )
+
+        # --- Phase 0: Nipātana lookup ---
+        nipatana_out = self._nipatana_lookup(left, right)
+        if nipatana_out is not None:
+            return nipatana_out, ""
+
+        # --- Phase 1: Sañjñā tagging ---
+        morph_left = raw_ctx.get("morph_left", {})
+        morph_right = raw_ctx.get("morph_right", {})
+        exec_ctx.sanjña_map = SanjanaTagger.tag(left, right, morph_left, morph_right)
+
+        # --- Phase 2: Pragṛhya Prakṛtibhāva check (6.1.125) ---
+        if "pragrhya" in exec_ctx.sanjña_map.get("left", set()):
+            from core.phonology import VOWELS
+            if right and right[0] in VOWELS:
+                return left + " ", right
+
+        # Initialise derivation trace
+        exec_ctx.trace = DerivationTrace(initial_left=left, initial_right=right)
+
         cur_l, cur_r = left, right
-        
-        def _get_spec(r: PaniniRule) -> float:
-            sp = getattr(r, "spec", None)
-            s = 0.0
-            if sp:
-                for ctx_obj in [sp.left_context, sp.right_context, sp.target_context]:
-                    if ctx_obj:
-                        if getattr(ctx_obj, "tokens_required", None):
-                            # Exact word matches (Vārtikas/Nipātanas) should always beat generic phonological rules.
-                            s += sum(1000.0 for t in ctx_obj.tokens_required)
-                        if ctx_obj.exact_text:
-                            if ctx_obj.exact_text in {"PAUSE_OR_VOICED", "LONG_VOWEL", "SHORT_VOWEL", "C", "V", "VOWEL", "CONSONANT"}:
-                                s += 2.0
-                            else:
-                                s += 100.0 / (ctx_obj.exact_text.count("|") + 1)
-                        if ctx_obj.features_required:
-                            s += len(ctx_obj.features_required) * 10.0
-                        if ctx_obj.pratyahara:
-                            s += 5.0
-            return s
-
+        scope = raw_ctx.get("scope", "external")
         ordered = self._get_sandhi_ordered_rules(scope=scope)
-        sapada_rules = [r for r in ordered if getattr(getattr(r, "spec", None), "governance", {}).get("domain", "sapada") != "tripadi" and not (r.sutra_id.startswith("8.2") or r.sutra_id.startswith("8.3") or r.sutra_id.startswith("8.4"))]
+
+        sapada_rules = [
+            r for r in ordered
+            if not (r.sutra_id.startswith("8.2") or r.sutra_id.startswith("8.3") or r.sutra_id.startswith("8.4"))
+            and getattr(getattr(r, "spec", None), "governance", {}).get("domain", "sapada") != "tripadi"
+        ]
         tripadi_rules = [r for r in ordered if r not in sapada_rules]
-        sapada_rules.sort(key=lambda r: _get_spec(r), reverse=True)
+        sapada_rules.sort(key=self._get_spec, reverse=True)
 
-        applied_rules = set()
+        applied_rules = exec_ctx.trace.rules_applied()
 
-        # Phase 1: Sapādāsaptādhyāyī (Iterative until convergence)
-        max_steps = 10
+        # --- Phase 3: Sapādāsaptādhyāyī ---
+        max_steps = 15
         for _ in range(max_steps):
             mutated = False
             for r in sapada_rules:
                 if r.sutra_id in applied_rules:
-                    continue  # Sakṛd eva pravartate
+                    continue
                 if cur_l in NATIVE_REPHA_LEXICON and getattr(r.spec, "target_context", None) and getattr(r.spec.target_context, "exact_text", "") == "s|H|r":
                     continue
-                if r.matches(cur_l, cur_r, ctx):
+                if r.matches(cur_l, cur_r, exec_ctx):
                     op_type = getattr(getattr(r, "spec", None), "operation", None)
                     if op_type and getattr(op_type, "op_type", "") in {"prohibit", "prakritibhava"}:
                         return cur_l, cur_r
-                    new_l, new_r = r.apply(cur_l, cur_r, ctx)
+                    new_l, new_r = r.apply(cur_l, cur_r, exec_ctx)
                     if new_l != cur_l or new_r != cur_r:
+                        consumed = cur_l[-1] if cur_l else ""
+                        exec_ctx.trace.record(
+                            r.sutra_id, cur_l, cur_r, new_l, new_r,
+                            consumed=consumed, emitted=""
+                        )
                         cur_l, cur_r = new_l, new_r
-                        applied_rules.add(r.sutra_id)
+                        applied_rules = exec_ctx.trace.rules_applied()
                         mutated = True
-                        break  # Restart scan from highest priority Sapāda rule
+                        break
             if not mutated:
                 break
 
-        # Phase 2: Tripādī (Iterative feeding per āśrayāt siddhatvam with Apavāda specificity priority)
-        last_chapter = 0
+        # --- Phase 4: Tripādī (8.2–8.4) ---
+        # Pūrvatrāsiddham (8.2.1): a rule in chapter N sees the state *before*
+        # any rule in chapter M > N changed it. Implemented via DerivationTrace
+        # checkpoints — earlier chapter rules query their chapter's snapshot state.
         for _ in range(max_steps):
             mutated = False
             matches = []
+            last_chapter = exec_ctx.trace.last_chapter_applied()
+
             for r in tripadi_rules:
                 if r.sutra_id in applied_rules:
                     continue
-                chapter = int(r.sutra_id.split(".")[1]) if r.sutra_id.startswith("8.") else 0
-                if last_chapter > chapter and chapter != 0:
-                    continue  # pūrvatrāsiddham: A later chapter cannot feed an earlier chapter
                 if cur_l in NATIVE_REPHA_LEXICON and getattr(r.spec, "target_context", None) and getattr(r.spec.target_context, "exact_text", "") == "s|H|r":
                     continue
-                if r.matches(cur_l, cur_r, ctx):
+
+                try:
+                    rule_chapter = int(r.sutra_id.split(".")[1]) if r.sutra_id.startswith("8.") else 0
+                except (IndexError, ValueError):
+                    rule_chapter = 0
+
+                # Pūrvatrāsiddham: earlier chapter rules see pre-chapter snapshot
+                if last_chapter > rule_chapter and rule_chapter != 0:
+                    check_l, check_r = exec_ctx.trace.get_state_before_chapter(last_chapter)
+                else:
+                    check_l, check_r = cur_l, cur_r
+
+                if r.matches(check_l, check_r, exec_ctx):
                     op_type = getattr(getattr(r, "spec", None), "operation", None)
                     if op_type and getattr(op_type, "op_type", "") in {"prohibit", "prakritibhava"}:
                         return cur_l, cur_r
-                    if r.apply(cur_l, cur_r, ctx) != (cur_l, cur_r):
-                        matches.append(r)
+                    candidate_result = r.apply(cur_l, cur_r, exec_ctx)
+                    if candidate_result != (cur_l, cur_r):
+                        matches.append((r, rule_chapter, candidate_result))
+
             if not matches:
                 break
-            best_r = max(matches, key=_get_spec)
-            new_l, new_r = best_r.apply(cur_l, cur_r, ctx)
+
+            best_r, best_chapter, (new_l, new_r) = max(matches, key=lambda x: self._get_spec(x[0]))
+            consumed = cur_l[-1] if cur_l else ""
+            exec_ctx.trace.record(
+                best_r.sutra_id, cur_l, cur_r, new_l, new_r,
+                consumed=consumed, emitted=""
+            )
             cur_l, cur_r = new_l, new_r
-            applied_rules.add(best_r.sutra_id)
-            if best_r.sutra_id.startswith("8."):
-                last_chapter = int(best_r.sutra_id.split(".")[1])
+            applied_rules = exec_ctx.trace.rules_applied()
             mutated = True
 
         return cur_l, cur_r
