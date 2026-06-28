@@ -47,7 +47,7 @@ def run_batch_validation(db_path: str = "data/sanskrit_master.db", update_db: bo
             ('8.4.39', 'kzuBnAdizu ca', 'TOKEN:kzuBna', None, None, 'prohibit', 'prohibit', 'tripadi', 'seed', 0, 0, '', 'left', None),
             ('8.4.41', 'zwunA zwuH_rev', 't|T|d|D|n', 'z|w|W|q|Q|R', None, 'bijection_right_substitute', 'w|W|q|Q|R', 'tripadi', 'seed', 0, 1, 'w|W|q|Q|R', 'right', 'bijection'),
             ('8.4.41', 'zwunA zwuH_fwd', 's|t|T|d|D|n', None, 'z|w|W|q|Q|R', 'bijection_substitute', 'z|w|W|q|Q|R', 'tripadi', 'seed', 1, 0, 'z|w|W|q|Q|R', 'left', 'bijection'),
-            ('8.4.55', 'Kari ca', 'PRAT:JaL', None, 'PRAT:Kar', 'bijection_substitute', 'k|k|c|c|w|w|t|t|p|p', 'tripadi', 'seed', 1, 0, 'k|k|c|c|w|w|t|t|p|p', 'left', 'bijection'),
+            ('8.4.55', 'Kari ca', 'PRAT:JaL', None, 'PRAT:Kar', 'bijection_substitute', 'k|k|c|c|w|w|t|t|p|p|S|z|s', 'tripadi', 'seed', 1, 0, 'k|k|c|c|w|w|t|t|p|p|S|z|s', 'left', 'bijection'),
             ('8.4.60', 'torli_td', 't|T|d|D', None, 'l', 'substitute', 'l', 'tripadi', 'seed', 1, 0, 'l', 'left', None),
             ('8.4.60', 'torli_n', 'n', None, 'l', 'substitute', 'Ml', 'tripadi', 'seed', 1, 0, 'Ml', 'left', None),
             ('8.4.62', 'Jayo ho.nyatarasyAm', 'h', 't|T|d|D', None, 'right_substitute', 'D', 'tripadi', 'seed', 0, 1, 'D', 'right', None),

@@ -11,6 +11,9 @@ from rules.base import PaniniRule, VidhiRule
 import functools
 
 
+NATIVE_REPHA_LEXICON = frozenset({'prātar', 'punar', 'antar', 'svar', 'prādur', 'sanutar', 'pratar', 'nitar', 'catur', 'ahor', 'prAtar', 'punar', 'antar', 'svar', 'prAdur', 'sanutar', 'pratar', 'nitar', 'catur', 'ahor'})
+
+
 class UniversalRuleEngine:
     """Master rule engine orchestrating grammatical transformations."""
 
@@ -60,7 +63,7 @@ class UniversalRuleEngine:
                             if getattr(ctx_obj, "tokens_required", None):
                                 s += sum(100.0 / len(t) for t in ctx_obj.tokens_required)
                             if ctx_obj.exact_text:
-                                if ctx_obj.exact_text in {"PAUSE_OR_VOICED", "LONG_VOWEL", "SHORT_VOWEL", "C", "V"}:
+                                if ctx_obj.exact_text in {"PAUSE_OR_VOICED", "LONG_VOWEL", "SHORT_VOWEL", "C", "V", "VOWEL", "CONSONANT"}:
                                     s += 2.0
                                 else:
                                     s += 100.0 / (ctx_obj.exact_text.count("|") + 1)
@@ -110,9 +113,29 @@ class UniversalRuleEngine:
         scope = ctx.get("scope", "external")
         cur_l, cur_r = left, right
         
+        def _get_spec(r: PaniniRule) -> float:
+            sp = getattr(r, "spec", None)
+            s = 0.0
+            if sp:
+                for ctx_obj in [sp.left_context, sp.right_context, sp.target_context]:
+                    if ctx_obj:
+                        if getattr(ctx_obj, "tokens_required", None):
+                            s += sum(100.0 / len(t) for t in ctx_obj.tokens_required)
+                        if ctx_obj.exact_text:
+                            if ctx_obj.exact_text in {"PAUSE_OR_VOICED", "LONG_VOWEL", "SHORT_VOWEL", "C", "V", "VOWEL", "CONSONANT"}:
+                                s += 2.0
+                            else:
+                                s += 100.0 / (ctx_obj.exact_text.count("|") + 1)
+                        if ctx_obj.features_required:
+                            s += len(ctx_obj.features_required) * 10.0
+                        if ctx_obj.pratyahara:
+                            s += 5.0
+            return s
+
         ordered = self._get_sandhi_ordered_rules(scope=scope)
         sapada_rules = [r for r in ordered if getattr(getattr(r, "spec", None), "governance", {}).get("domain", "sapada") != "tripadi" and not (r.sutra_id.startswith("8.2") or r.sutra_id.startswith("8.3") or r.sutra_id.startswith("8.4"))]
         tripadi_rules = [r for r in ordered if r not in sapada_rules]
+        sapada_rules.sort(key=lambda r: _get_spec(r), reverse=True)
 
         applied_rules = set()
 
@@ -123,6 +146,8 @@ class UniversalRuleEngine:
             for r in sapada_rules:
                 if r.sutra_id in applied_rules:
                     continue  # Sakṛd eva pravartate
+                if cur_l in NATIVE_REPHA_LEXICON and getattr(r.spec, "target_context", None) and getattr(r.spec.target_context, "exact_text", "") == "s|H|r":
+                    continue
                 if r.matches(cur_l, cur_r, ctx):
                     op_type = getattr(getattr(r, "spec", None), "operation", None)
                     if op_type and getattr(op_type, "op_type", "") in {"prohibit", "prakritibhava"}:
@@ -136,31 +161,18 @@ class UniversalRuleEngine:
             if not mutated:
                 break
 
-        def _get_spec(r: PaniniRule) -> float:
-            sp = getattr(r, "spec", None)
-            s = 0.0
-            if sp:
-                for ctx_obj in [sp.left_context, sp.right_context, sp.target_context]:
-                    if ctx_obj:
-                        if getattr(ctx_obj, "tokens_required", None):
-                            s += sum(100.0 / len(t) for t in ctx_obj.tokens_required)
-                        if ctx_obj.exact_text:
-                            if ctx_obj.exact_text in {"PAUSE_OR_VOICED", "LONG_VOWEL", "SHORT_VOWEL", "C", "V"}:
-                                s += 2.0
-                            else:
-                                s += 100.0 / (ctx_obj.exact_text.count("|") + 1)
-                        if ctx_obj.features_required:
-                            s += len(ctx_obj.features_required) * 10.0
-                        if ctx_obj.pratyahara:
-                            s += 5.0
-            return s
-
         # Phase 2: Tripādī (Iterative feeding per āśrayāt siddhatvam with Apavāda specificity priority)
+        last_chapter = 0
         for _ in range(max_steps):
             mutated = False
             matches = []
             for r in tripadi_rules:
                 if r.sutra_id in applied_rules:
+                    continue
+                chapter = int(r.sutra_id.split(".")[1]) if r.sutra_id.startswith("8.") else 0
+                if last_chapter == 4 and chapter == 2:
+                    continue  # Asiddhatva: 8.4 cannot feed back into 8.2
+                if cur_l in NATIVE_REPHA_LEXICON and getattr(r.spec, "target_context", None) and getattr(r.spec.target_context, "exact_text", "") == "s|H|r":
                     continue
                 if r.matches(cur_l, cur_r, ctx):
                     op_type = getattr(getattr(r, "spec", None), "operation", None)
@@ -174,6 +186,8 @@ class UniversalRuleEngine:
             new_l, new_r = best_r.apply(cur_l, cur_r, ctx)
             cur_l, cur_r = new_l, new_r
             applied_rules.add(best_r.sutra_id)
+            if best_r.sutra_id.startswith("8."):
+                last_chapter = int(best_r.sutra_id.split(".")[1])
             mutated = True
 
         return cur_l, cur_r

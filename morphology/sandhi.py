@@ -21,7 +21,9 @@ class SandhiEngine:
         from compiler.pipeline import PratyaharaResolver
         engine = UniversalRuleEngine.get_instance()
         res_l, res_r = engine.dispatch_forward(w1, w2)
-        if res_l and res_r and PratyaharaResolver.contains("aC", res_l[-1]) and PratyaharaResolver.contains("aC", res_r[0]):
+        def _is_vowel_or_pluta(c: str) -> bool:
+            return c == '3' or PratyaharaResolver.contains("aC", c)
+        if res_l and res_r and (_is_vowel_or_pluta(res_l[-1]) or res_l.endswith('3')) and _is_vowel_or_pluta(res_r[0]):
             return res_l + " " + res_r
         return res_l + res_r
 

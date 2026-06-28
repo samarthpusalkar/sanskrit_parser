@@ -268,6 +268,8 @@ class CompiledVidhiRule(PaniniRule):
                 fwd_map = dict(zip(t_list, s_list))
                 return fwd_map.get(l_char) or fwd_map.get(savarna.get(l_char, ''))
             else:
+                if l_char in s_list:
+                    return l_char
                 from core.phonology import get_sthana
                 search_char = right[0] if l_char == 'M' and right else savarna.get(l_char, l_char)
                 if search_char in t_list or l_char == 'M':
