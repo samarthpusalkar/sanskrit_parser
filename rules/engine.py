@@ -71,10 +71,6 @@ class UniversalRuleEngine:
                                 s += len(ctx_obj.features_required) * 10.0
                             if ctx_obj.pratyahara:
                                 s += 5.0
-                    
-                    sp_op = getattr(sp, "operation", None)
-                    if sp_op and getattr(sp_op, "op_type", None) == "ekadesha_savarna_dirgha":
-                        s += 100.0
                 return s
 
             op_obj = getattr(spec, "operation", None) if spec else None
@@ -124,7 +120,8 @@ class UniversalRuleEngine:
                 for ctx_obj in [sp.left_context, sp.right_context, sp.target_context]:
                     if ctx_obj:
                         if getattr(ctx_obj, "tokens_required", None):
-                            s += sum(100.0 / len(t) for t in ctx_obj.tokens_required)
+                            # Exact word matches (Vārtikas/Nipātanas) should always beat generic phonological rules.
+                            s += sum(1000.0 for t in ctx_obj.tokens_required)
                         if ctx_obj.exact_text:
                             if ctx_obj.exact_text in {"PAUSE_OR_VOICED", "LONG_VOWEL", "SHORT_VOWEL", "C", "V", "VOWEL", "CONSONANT"}:
                                 s += 2.0
@@ -134,12 +131,6 @@ class UniversalRuleEngine:
                             s += len(ctx_obj.features_required) * 10.0
                         if ctx_obj.pratyahara:
                             s += 5.0
-            
-            # Explicit boost for Savarṇa Dīrgha which is an Apavāda to Guṇa
-            sp_op = getattr(getattr(r, "spec", None), "operation", None)
-            if sp_op and getattr(sp_op, "op_type", None) == "ekadesha_savarna_dirgha":
-                s += 100.0
-
             return s
 
         ordered = self._get_sandhi_ordered_rules(scope=scope)
@@ -180,8 +171,8 @@ class UniversalRuleEngine:
                 if r.sutra_id in applied_rules:
                     continue
                 chapter = int(r.sutra_id.split(".")[1]) if r.sutra_id.startswith("8.") else 0
-                if last_chapter == 4 and chapter == 2:
-                    continue  # Asiddhatva: 8.4 cannot feed back into 8.2
+                if last_chapter > chapter and chapter != 0:
+                    continue  # pūrvatrāsiddham: A later chapter cannot feed an earlier chapter
                 if cur_l in NATIVE_REPHA_LEXICON and getattr(r.spec, "target_context", None) and getattr(r.spec.target_context, "exact_text", "") == "s|H|r":
                     continue
                 if r.matches(cur_l, cur_r, ctx):

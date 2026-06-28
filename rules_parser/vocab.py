@@ -67,7 +67,7 @@ def resolve_term_to_primitive(term_slp: str, is_ekadesha: bool = False, right_co
     if term_slp in {"pUrvarUpa", "pUrvarUpam", "pUrvaH"} or norm in {"pUrvarUpa", "pUrva"}:
         op = PrimitiveOp(left_consume=0, right_consume=1, emit="'", emit_side="right", compute_fn=None, substitute="'", op_type="purva_rupa")
         return op, "purva_rupa", "'"
-        
+
     if term_slp in {"vAntaH", "vAnto"} or norm == "vAnta":
         op = PrimitiveOp(left_consume=0, right_consume=0, emit="", emit_side="left", compute_fn=None, substitute="", op_type="non_operational")
         return op, "non_operational", ""
@@ -105,9 +105,11 @@ def resolve_term_to_primitive(term_slp: str, is_ekadesha: bool = False, right_co
         op = PrimitiveOp(left_consume=0, right_consume=0, emit="", emit_side="left", compute_fn="duplicate", substitute="", op_type="augment")
         return op, "augment", ""
 
-    if term_slp in {"yaR", "yaRaH"}:
-        op = PrimitiveOp(left_consume=1, right_consume=0, emit="", emit_side="left", compute_fn="bijection", substitute="PRAT:yaR", op_type="exact_substitute")
-        return op, "exact_substitute", "PRAT:yaR"
+    from compiler.ast_builder import SutraAstBuilder
+    prat = SutraAstBuilder._resolve_pratyahara(term_slp)
+    if prat:
+        op = PrimitiveOp(left_consume=1, right_consume=0, emit="", emit_side="left", compute_fn="bijection", substitute=f"PRAT:{prat}", op_type="exact_substitute")
+        return op, "exact_substitute", f"PRAT:{prat}"
 
     # Literal replacement check
     sub_val = LITERAL_REPLACEMENTS.get(term_slp, LITERAL_REPLACEMENTS.get(norm, term_slp))

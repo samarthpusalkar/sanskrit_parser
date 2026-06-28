@@ -27,9 +27,99 @@ class SamastasutraParser:
 
         if cat_prefix in ('S', 'P', 'AD', 'AT'):
             return default_rule
-            
-        if not ss:
-            # Fallback if ss is missing - mark as non-operational to avoid corrupting engine
+
+        # --- Hardcoded phonological exceptions based on Vārtikas/complex rules ---
+        if sutra_id == '6.1.109':
+            return RuleSpec(
+                id=sutra_id, name=name, rule_type="vidhi_sandhi", priority=priority,
+                left_context=ConditionSpec(pratyahara="eN", match_pos="end"),
+                right_context=ConditionSpec(exact_text="a", match_pos="start"),
+                target_context=ConditionSpec(tags_required={"padanta"}, match_pos="end"),
+                operation=PrimitiveOp(left_consume=0, right_consume=1, emit="'", emit_side="left", substitute="purva_rupa", op_type="purva_rupa"),
+                governance={"source": "ss_parser", "domain": "samhita"}
+            )
+        if sutra_id == '8.2.66':
+            return RuleSpec(
+                id=sutra_id, name=name, rule_type="vidhi_sandhi", priority=priority,
+                left_context=ConditionSpec(exact_text="s", match_pos="end"),
+                right_context=None,
+                target_context=ConditionSpec(tags_required={"padanta"}, match_pos="end"),
+                operation=PrimitiveOp(left_consume=1, right_consume=0, emit="r", emit_side="left", substitute="r", op_type="exact_substitute"),
+                governance={"source": "ss_parser", "domain": "tripadi"}
+            )
+        if sutra_id == '6.1.113': # ato roraplutad
+            return RuleSpec(
+                id=sutra_id, name=name, rule_type="vidhi_sandhi", priority=priority,
+                left_context=ConditionSpec(exact_text="as", match_pos="end"),
+                right_context=ConditionSpec(exact_text="a", match_pos="start"),
+                target_context=ConditionSpec(tags_required={"padanta"}, match_pos="end"),
+                operation=PrimitiveOp(left_consume=2, right_consume=1, emit="o'", emit_side="left", substitute="u", op_type="exact_substitute"),
+                governance={"source": "ss_parser", "domain": "samhita"}
+            )
+        if sutra_id == '6.1.114': # hasi ca
+            return RuleSpec(
+                id=sutra_id, name=name, rule_type="vidhi_sandhi", priority=priority,
+                left_context=ConditionSpec(exact_text="as", match_pos="end"),
+                right_context=ConditionSpec(pratyahara="haS", match_pos="start"),
+                target_context=ConditionSpec(tags_required={"padanta"}, match_pos="end"),
+                operation=PrimitiveOp(left_consume=2, right_consume=0, emit="o", emit_side="left", substitute="u", op_type="exact_substitute"),
+                governance={"source": "ss_parser", "domain": "samhita"}
+            )
+
+        if sutra_id == '8.3.12': # kan amredite
+            return RuleSpec(
+                id=sutra_id, name=name, rule_type="vidhi_sandhi", priority=priority,
+                left_context=ConditionSpec(exact_text="kAn", match_pos="end"),
+                right_context=ConditionSpec(exact_text="kAn", match_pos="start"),
+                target_context=ConditionSpec(tags_required={"padanta"}, match_pos="end"),
+                operation=PrimitiveOp(left_consume=1, right_consume=0, emit="Ms", emit_side="left", substitute="bijection", op_type="exact_substitute"),
+                governance={"source": "ss_parser", "domain": "tripadi"}
+            )
+        if sutra_id == '8.2.39': # jhalam jaso 'nte
+            return RuleSpec(
+                id=sutra_id, name=name, rule_type="vidhi_sandhi", priority=priority,
+                left_context=None,
+                right_context=None,
+                target_context=ConditionSpec(pratyahara="JaL", exact_text="NOT:s|z|S", tags_required={"padanta"}, match_pos="end"),
+                operation=PrimitiveOp(left_consume=1, right_consume=0, emit="", emit_side="left", substitute="PRAT:jaS", op_type="bijection", compute_fn="bijection"),
+                governance={"source": "ss_parser", "domain": "tripadi"}
+            )
+        if sutra_id == '8.4.55': # khari ca
+            return RuleSpec(
+                id=sutra_id, name=name, rule_type="vidhi_sandhi", priority=priority,
+                left_context=None,
+                right_context=ConditionSpec(pratyahara="Kar", match_pos="start"),
+                target_context=ConditionSpec(pratyahara="JaL", match_pos="end"),
+                operation=PrimitiveOp(left_consume=1, right_consume=0, emit="", emit_side="left", substitute="PRAT:car", op_type="bijection", compute_fn="bijection"),
+                governance={"source": "ss_parser", "domain": "tripadi"}
+            )
+        if sutra_id == '8.3.15': # kharavasanayor visarjaniyah
+            return RuleSpec(
+                id=sutra_id, name=name, rule_type="vidhi_sandhi", priority=priority,
+                left_context=ConditionSpec(exact_text="r", match_pos="end"),
+                right_context=ConditionSpec(pratyahara="Kar", match_pos="start"),
+                target_context=ConditionSpec(tags_required={"padanta"}, match_pos="end"),
+                operation=PrimitiveOp(left_consume=1, right_consume=0, emit="H", emit_side="left", substitute="H", op_type="exact_substitute"),
+                governance={"source": "ss_parser", "domain": "tripadi"}
+            )
+        if sutra_id == '8.3.34': # visarjaniyasya sah
+            return RuleSpec(
+                id=sutra_id, name=name, rule_type="vidhi_sandhi", priority=priority,
+                left_context=ConditionSpec(exact_text="H", match_pos="end"),
+                right_context=ConditionSpec(pratyahara="Kar", match_pos="start"),
+                target_context=ConditionSpec(tags_required={"padanta"}, match_pos="end"),
+                operation=PrimitiveOp(left_consume=1, right_consume=0, emit="s", emit_side="left", substitute="s", op_type="exact_substitute"),
+                governance={"source": "ss_parser", "domain": "tripadi"}
+            )
+        if sutra_id == '8.4.40': # stoH ScunA ScuH
+            return RuleSpec(
+                id=sutra_id, name=name, rule_type="vidhi_sandhi", priority=priority,
+                left_context=None,
+                right_context=ConditionSpec(exact_text="S|c|C|j|J|Y", match_pos="start"),
+                target_context=ConditionSpec(exact_text="s|t|T|d|D|n", match_pos="end"),
+                operation=PrimitiveOp(left_consume=1, right_consume=0, emit="", emit_side="left", substitute="S|c|C|j|J|Y", op_type="bijection", compute_fn="bijection"),
+                governance={"source": "ss_parser", "domain": "tripadi"}
+            )
             return RuleSpec(
                 id=sutra_id, name=name, rule_type="vidhi_sandhi", priority=priority,
                 target_context=None, left_context=None, right_context=None,
@@ -144,17 +234,25 @@ class SamastasutraParser:
         if (not has_target and not left_cond and not right_cond) or op_type in {"prohibit", "prakritibhava"}:
             prim_op = non_op
             
-        if sutra_id in {"6.1.107", "6.1.108"}:
-            prim_op = non_op
-        
-        # 4. Resolve Domain from Adhikāra
+        # 4. Resolve Domain from Adhikāra and Sūtra ID
         domain = "sapada"
-        if "पूर्वत्रासिद्धम्" in ad or "पूर्वत्रासिद्धम्" in ss:
-            domain = "tripadi"
-        elif "संहितायाम्" in ad or "संहितायाम्" in ss:
-            domain = "samhita"
-        elif "पदस्य" in ad or "पदस्य" in ss:
-            domain = "sapada"
+        parts = sutra_id.split(".")
+        if len(parts) >= 2:
+            try:
+                adhyaya = int(parts[0])
+                pada = int(parts[1])
+                if adhyaya > 8 or (adhyaya == 8 and pada >= 2):
+                    domain = "tripadi"
+            except ValueError:
+                pass
+
+        if domain != "tripadi":
+            if sutra_id in {"6.1.102", "6.1.103", "6.1.104", "6.1.105", "6.1.106", "6.1.107", "6.1.108", "6.1.110", "6.1.111", "6.1.112"}:
+                domain = "angasya"
+            elif "संहितायाम्" in ad or "संहितायाम्" in ss:
+                domain = "samhita"
+            elif "पदस्य" in ad or "पदस्य" in ss:
+                domain = "sapada"
 
         return RuleSpec(
             id=sutra_id,

@@ -61,10 +61,16 @@ def _expand_literal_pattern(pattern: str) -> List[str]:
 def _condition_from_config(pattern: str, match_pos: str) -> "ConditionSpec":
     from rule_engine.dsl import ConditionSpec
     if pattern.startswith("PRAT:"):
-        return ConditionSpec(pratyahara=pattern.removeprefix("PRAT:"), match_pos=match_pos)
+        parts = pattern.removeprefix("PRAT:").split("|EXACT:")
+        if len(parts) == 2:
+            return ConditionSpec(pratyahara=parts[0], exact_text=parts[1], match_pos=match_pos)
+        return ConditionSpec(pratyahara=parts[0], match_pos=match_pos)
     if pattern.startswith("TOKEN:"):
         tokens = {p.strip() for p in pattern.removeprefix("TOKEN:").split("|") if p.strip()}
         return ConditionSpec(tokens_required=tokens, match_pos=match_pos)
+    if pattern.startswith("TAG:"):
+        tags = {p.strip() for p in pattern.removeprefix("TAG:").split("|") if p.strip()}
+        return ConditionSpec(tags_required=tags, match_pos=match_pos)
     return ConditionSpec(exact_text=pattern, match_pos=match_pos)
 
 
@@ -85,7 +91,7 @@ class CompiledVidhiRule(PaniniRule):
         else:
             self._prim = PrimitiveOp.from_legacy(spec.operation.op_type, spec.operation.substitute)
 
-    def matches(self, left: str, right: str, grammatical_context: Dict[str, Any]) -> bool:
+    def matches(self, left: str, right: str, ctx: Dict[str, Any]) -> bool:
         if not left or not right:
             return False
 
@@ -102,12 +108,9 @@ class CompiledVidhiRule(PaniniRule):
         if prim.op_type in {"external_block", "non_operational"}:
             return False
 
-        if prim.op_type == "ekadesha_savarna_dirgha":
-            from core.phonology import get_sthana
-            if not right or (get_sthana(l_char) != get_sthana(right[0])):
-                return False
+        # Removed hardcoded ekadesha_savarna_dirgha check
 
-        if not self.spec.target_context.pratyahara and not self.spec.target_context.exact_text and not getattr(self.spec.target_context, "tokens_required", None) and prim.op_type != "governance":
+        if not self.spec.target_context.pratyahara and not self.spec.target_context.exact_text and not getattr(self.spec.target_context, "tokens_required", None) and not getattr(self.spec.target_context, "tags_required", None) and prim.op_type != "governance":
             return False
             
         if prim.emit_side == "right" and prim.op_type not in {"purva_rupa"}:
@@ -119,29 +122,35 @@ class CompiledVidhiRule(PaniniRule):
                     parts = [p.strip() for p in t_cond.exact_text.split("|") if p.strip()]
                     if not any(right.startswith(p) or _symbolic_match(p, right[0]) for p in parts):
                         return False
-            if self.spec.left_context and not self._is_config_condition_match(self.spec.left_context, left, l_char):
+            if self.spec.left_context and not self._is_config_condition_match(self.spec.left_context, left, l_char, ctx):
                 return False
         else:
-            if not self._is_config_target_match(left, l_char):
+            if not self._is_config_target_match(left, l_char, ctx):
                 return False
-            if self.spec.left_context and not self._is_config_condition_match(self.spec.left_context, left, left[:-1][-1] if len(left) > 1 else left[-1]):
-                return False
-            if not self._is_valid_right_context(right):
+            if self.spec.left_context:
+                tgt_consumes = bool(self.spec.target_context and (self.spec.target_context.exact_text or self.spec.target_context.pratyahara or getattr(self.spec.target_context, 'tokens_required', None)))
+                lc_char = left[:-1][-1] if len(left) > 1 and tgt_consumes else l_char
+                if not self._is_config_condition_match(self.spec.left_context, left if not tgt_consumes else left[:-1], lc_char, ctx):
+                    return False
+            if not self._is_valid_right_context(right, left):
                 return False
         # savarna_long needs a vowel at left[-2]
         if prim.compute_fn == "savarna_long":
             return len(left) >= 2 and left[-2] in SHORT_VOWELS
         return True
 
-    def _is_config_target_match(self, left: str, l_char: str) -> bool:
+    def _is_config_target_match(self, left: str, l_char: str, ctx: Dict[str, Any] = None) -> bool:
         tgt = self.spec.target_context
-        return self._is_config_condition_match(tgt, left, l_char)
+        return self._is_config_condition_match(tgt, left, l_char, ctx)
 
-    def _is_config_condition_match(self, cond, text: str, boundary_char: str) -> bool:
+    def _is_config_condition_match(self, cond, text: str, boundary_char: str, ctx: Dict[str, Any] = None) -> bool:
         if not cond:
             return True
         if not text:
             return False
+        if getattr(cond, "tags_required", None) and ctx:
+            if "padanta" in cond.tags_required and not ctx.get("is_padanta", True): # Default to true for now if not explicitly false
+                return False
         if getattr(cond, "tokens_required", None):
             words = text.split()
             last_word = words[-1] if words else text
@@ -149,17 +158,20 @@ class CompiledVidhiRule(PaniniRule):
         ctx_str = text[:-1] if len(text) > 1 and boundary_char != text[-1] else text
         char_to_check = ctx_str[0] if cond.match_pos == "start" else boundary_char
         if cond.pratyahara:
-            return PratyaharaResolver.contains(cond.pratyahara, char_to_check)
+            if not PratyaharaResolver.contains(cond.pratyahara, char_to_check):
+                return False
         if cond.exact_text:
             if cond.exact_text.startswith("NOT:"):
                 disallowed = {p.strip() for p in cond.exact_text[4:].split("|") if p.strip()}
-                return char_to_check not in disallowed and not any(ctx_str.endswith(d) for d in disallowed)
+                if char_to_check in disallowed or any(ctx_str.endswith(d) for d in disallowed):
+                    return False
+                return True
             if any(ctx_str.endswith(p.strip()) for p in cond.exact_text.split("|") if p.strip()):
                 return True
             return _symbolic_match(cond.exact_text, char_to_check)
         return True
 
-    def _is_valid_right_context(self, right_str: str) -> bool:
+    def _is_valid_right_context(self, right_str: str, left_str: str = None) -> bool:
         rgt = self.spec.right_context
         if not rgt:
             return True
@@ -180,7 +192,13 @@ class CompiledVidhiRule(PaniniRule):
                 return True
             if any(right_str.startswith(p.strip()) for p in rgt.exact_text.split("|") if p.strip()):
                 return True
-            if rgt.exact_text.lower() in {"savarr", "ac"}:
+            if rgt.exact_text.lower() in {"savarr", "savarra", "savarn", "savarna"}:
+                if not PratyaharaResolver.contains("aC", r_char): return False
+                if left_str:
+                    from core.phonology import get_sthana
+                    return get_sthana(left_str[-1]) == get_sthana(r_char)
+                return True
+            if rgt.exact_text.lower() == "ac":
                 return PratyaharaResolver.contains("aC", r_char)
             allowed = set(rgt.exact_text.split(","))
             return r_char in allowed or right_str.startswith(rgt.exact_text)

@@ -70,8 +70,14 @@ def run_batch_validation(db_path: str = "data/sanskrit_master.db", update_db: bo
                 
                 def _fmt_cond(c):
                     if not c: return None
-                    if getattr(c, 'pratyahara', None): return f"PRAT:{c.pratyahara}"
+                    if getattr(c, 'exact_text', None) and getattr(c, 'exact_text').lower().startswith('savar'): return c.exact_text
+                    if getattr(c, 'pratyahara', None):
+                        base = f"PRAT:{c.pratyahara}"
+                        if getattr(c, 'exact_text', None):
+                            base += f"|EXACT:{c.exact_text}"
+                        return base
                     if getattr(c, 'tokens_required', None): return f"TOKEN:{'|'.join(c.tokens_required)}"
+                    if getattr(c, 'tags_required', None): return f"TAG:{'|'.join(c.tags_required)}"
                     if getattr(c, 'features_required', None): return f"FEAT:{'|'.join(c.features_required)}"
                     return c.exact_text
 
