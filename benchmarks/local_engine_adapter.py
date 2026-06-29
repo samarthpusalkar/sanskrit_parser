@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import os
 from typing import List, Dict, Any, Optional, Sequence
-from dataclasses import field
 
 from .adapters import BenchmarkAdapter
 from .models import (
@@ -11,20 +9,20 @@ from .models import (
 )
 
 from sanskrit_dsl.executor import DSLExecutor
-from morphology.sandhi import SandhiEngine
-from morphology.subanta import SubantaGenerator
-from morphology.tinanta import TinantaGenerator
-from core.phonology import iast_to_slp1, slp1_to_iast
+from sanskrit_dsl.morph_executor import MorphExecutor
 
 class LocalEngineAdapter(BenchmarkAdapter):
     """
     Adapter for the internal Pāṇinian engine.
-    Routes through the DSL executor for sandhi cases.
+    Routes through the DSL executor for sandhi cases and through the
+    MorphExecutor for tinganta/subanta cases so morph derivation produces
+    real evidence (applied_rule_ids) instead of a DB-lookup shortcut.
     """
     name: str = "local_engine"
 
     def __init__(self):
         self._dsl_executor: Optional[DSLExecutor] = None
+        self._morph_executor: Optional[MorphExecutor] = None
 
     def supported_domains(self) -> Sequence[str]:
         return ("sandhi", "tinganta", "subanta", "derivation")
@@ -39,6 +37,11 @@ class LocalEngineAdapter(BenchmarkAdapter):
         if self._dsl_executor is None:
             self._dsl_executor = DSLExecutor()
         return self._dsl_executor
+
+    def _get_morph_executor(self) -> MorphExecutor:
+        if self._morph_executor is None:
+            self._morph_executor = MorphExecutor()
+        return self._morph_executor
 
     def list_loaded_rules(self) -> List[str]:
         """Returns all rules compiled by the DSL compiler."""
@@ -80,20 +83,28 @@ class LocalEngineAdapter(BenchmarkAdapter):
         purusa = case.inputs.get("purusa", 3)
         vacana = case.inputs.get("vacana", 1)
 
-        actual = TinantaGenerator.conjugate(root, gana, lakara, purusa, vacana)
-        evidence = BenchmarkEvidence()
+        morph = self._get_morph_executor()
+        result = morph.conjugate(root, gana, lakara, purusa, vacana)
+        evidence = BenchmarkEvidence(
+            applied_rule_ids=result["applied_rule_ids"],
+            trace_steps=result["trace_steps"]
+        )
 
-        return self._create_result(case, actual, evidence)
+        return self._create_result(case, result["form"], evidence)
 
     def _run_subanta_case(self, case: BenchmarkCase) -> BenchmarkResult:
         stem = case.inputs.get("stem", "")
         case_type = case.inputs.get("case", "nominative")
         number = case.inputs.get("number", "singular")
 
-        actual = SubantaGenerator.decline(stem, case_type, number)
-        evidence = BenchmarkEvidence()
+        morph = self._get_morph_executor()
+        result = morph.decline(stem, case_type, number)
+        evidence = BenchmarkEvidence(
+            applied_rule_ids=result["applied_rule_ids"],
+            trace_steps=result["trace_steps"]
+        )
 
-        return self._create_result(case, actual, evidence)
+        return self._create_result(case, result["form"], evidence)
 
     def _create_result(self, case: BenchmarkCase, actual: str, evidence: BenchmarkEvidence) -> BenchmarkResult:
         hardcoding = False

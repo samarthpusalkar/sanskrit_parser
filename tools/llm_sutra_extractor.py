@@ -102,10 +102,12 @@ def load_commentary(sutra_id: str) -> str:
         with open(vasu_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        numeric_id = sutra_id.replace(".", "")
-        if len(numeric_id) == 4:
-            parts = sutra_id.split(".")
-            numeric_id = f"{parts[0]}{parts[1]}0{parts[2]}" if len(parts) == 3 else numeric_id
+        parts = sutra_id.split(".")
+        if len(parts) == 3:
+            adhyaya, pada, sutra_no = parts
+            numeric_id = f"{adhyaya}{pada}{int(sutra_no):03d}"
+        else:
+            numeric_id = sutra_id.replace(".", "")
         commentary = data.get(numeric_id, "")
         if commentary:
             return commentary[:500] + "..." if len(commentary) > 500 else commentary
@@ -172,37 +174,49 @@ Expected JSON schema:
 Return ONLY valid JSON, no explanation."""
 
 
-def call_ollama(prompt: str, model: str = "deepseek-v4-pro:cloud") -> Optional[Dict]:
-    """Call Ollama HTTP API to extract metadata."""
-    try:
-        payload = json.dumps({
-            "model": model,
-            "prompt": prompt,
-            "stream": False,
-            "format": "json"
-        }).encode("utf-8")
+def call_ollama(prompt: str, model: str = "deepseek-v4-pro:cloud",
+                max_retries: int = 5) -> Optional[Dict]:
+    """Call Ollama HTTP API to extract metadata. Retries on 429 with backoff."""
+    for attempt in range(max_retries):
+        try:
+            payload = json.dumps({
+                "model": model,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json"
+            }).encode("utf-8")
 
-        req = urllib.request.Request(
-            OLLAMA_URL,
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST"
-        )
+            req = urllib.request.Request(
+                OLLAMA_URL,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
 
-        with urllib.request.urlopen(req, timeout=120) as response:
-            result = json.loads(response.read().decode("utf-8"))
-            response_text = result.get("response", "")
+            with urllib.request.urlopen(req, timeout=120) as response:
+                result = json.loads(response.read().decode("utf-8"))
+                response_text = result.get("response", "")
 
-        start = response_text.find("{")
-        end = response_text.rfind("}") + 1
-        if start == -1 or end == 0:
-            return {"error": "No JSON found in response"}
-        json_str = response_text[start:end]
-        return json.loads(json_str)
-    except urllib.error.URLError as e:
-        return {"error": f"Ollama API error: {e}"}
-    except Exception as e:
-        return {"error": str(e)}
+            start = response_text.find("{")
+            end = response_text.rfind("}") + 1
+            if start == -1 or end == 0:
+                return {"error": "No JSON found in response"}
+            json_str = response_text[start:end]
+            return json.loads(json_str)
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < max_retries - 1:
+                wait = min(2 ** (attempt + 2), 60)
+                time.sleep(wait)
+                continue
+            return {"error": f"Ollama API error: HTTP {e.code}: {e.reason}"}
+        except urllib.error.URLError as e:
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            return {"error": f"Ollama API error: {e}"}
+        except Exception as e:
+            return {"error": str(e)}
+    return {"error": "Ollama API exhausted retries"}
 
 
 def store_extraction(conn: sqlite3.Connection, sutra_id: str, extraction: Dict, model: str):
@@ -232,7 +246,9 @@ def store_extraction(conn: sqlite3.Connection, sutra_id: str, extraction: Dict, 
     conn.commit()
 
 
-def extract_chapter(chapter: str, force: bool = False, dry_run: bool = False, model: str = "deepseek-v4-pro:cloud"):
+def extract_chapter(chapter: str, force: bool = False, dry_run: bool = False,
+                    model: str = "deepseek-v4-pro:cloud", delay: float = 2.0,
+                    max_sutras: int = 0):
     conn = sqlite3.connect(DB_PATH)
     ensure_table(conn)
 
@@ -264,6 +280,10 @@ def extract_chapter(chapter: str, force: bool = False, dry_run: bool = False, mo
             print(prompt[:800])
             continue
 
+        if max_sutras and extracted + failed >= max_sutras:
+            print(f"\nReached --max {max_sutras} new sūtras; stopping (cached: {cached}).")
+            break
+
         print(f"  Extracting {sid}...", end=" ")
         sys.stdout.flush()
 
@@ -282,6 +302,9 @@ def extract_chapter(chapter: str, force: bool = False, dry_run: bool = False, mo
         print(f"OK (op={result.get('operation_type')})")
         extracted += 1
 
+        if delay > 0:
+            time.sleep(delay)
+
     conn.close()
     print(f"\nDone: {extracted} extracted, {cached} cached, {failed} failed")
 
@@ -292,9 +315,12 @@ def main():
     parser.add_argument("--force", action="store_true", help="Re-extract even if cached")
     parser.add_argument("--dry-run", action="store_true", help="Show prompts without calling LLM")
     parser.add_argument("--model", default="deepseek-v4-pro:cloud", help="Ollama model to use")
+    parser.add_argument("--delay", type=float, default=2.0, help="Seconds to wait between LLM calls (rate-limit safety)")
+    parser.add_argument("--max", type=int, default=0, help="Stop after N new (non-cached) sūtras (0 = no limit)")
     args = parser.parse_args()
 
-    extract_chapter(args.chapter, force=args.force, dry_run=args.dry_run, model=args.model)
+    extract_chapter(args.chapter, force=args.force, dry_run=args.dry_run,
+                    model=args.model, delay=args.delay, max_sutras=args.max)
 
 
 if __name__ == "__main__":

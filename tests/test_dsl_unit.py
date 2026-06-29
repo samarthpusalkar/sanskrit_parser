@@ -5,10 +5,10 @@ GATE tests that verify compiled sūtras actually match and produce correct outpu
 
 HONEST STATE:
 - 6.1.77 (iko yan aci) works end-to-end via the clean vibhakti parser
-- Other sutras (6.1.87, 6.1.88, 6.1.101, 8.2.66, 8.3.23) FAIL because the
-  clean parser cannot correctly interpret their vibhakti roles without
-  commentary context. These need LLM extraction (tools/llm_sutra_extractor.py).
-- The tests document honestly what works and what doesn't.
+- 6.1.101 (akaḥ savarṇe dīrghaḥ) works end-to-end via LLM extraction
+- 6.1.87 (ād guṇaḥ) and 6.1.88 (vṛddhir eci) await LLM extraction; the tests
+  below document that no LLM row is present yet and will flip to positive
+  assertions once extraction is run for them.
 """
 
 import os
@@ -58,38 +58,48 @@ class TestSutra6177:
         assert new_left == "gurv"
 
 
+class TestSutra6101:
+    """6.1.101: akaḥ savarṇe dīrghaḥ — homogeneous vowel pair → dīrgha.
+
+    Now works end-to-end via LLM extraction (target=aK pratyahara,
+    right_context=savarṇa treated as the savarṇa meta-term wildcard).
+    """
+
+    def test_compiles_as_executable(self, compiler):
+        s = compiler.compile_sutra("6.1.101")
+        assert s.spec.is_executable
+        assert s.spec.parsed_by == "llm_extract"
+
+    def test_matches_rAma_atra(self, compiler):
+        s = compiler.compile_sutra("6.1.101")
+        assert s.matches("rAma", "atra")
+
+    def test_produces_dirgha_merge(self, compiler):
+        s = compiler.compile_sutra("6.1.101")
+        new_left, new_right = s.apply("rAma", "atra")
+        assert new_left == "rAmA"
+        assert new_right == "tra"
+
+
 class TestSutrasNeedingLLMExtraction:
     """
-    These sutras the clean parser cannot correctly interpret.
-    They need LLM extraction with commentary context.
-
-    The tests below verify that the clean parser produces WRONG output,
-    which documents the need for LLM extraction. Once LLM extraction is
-    run for these sutras, these tests should be replaced with correct
-    output assertions.
+    6.1.87 (ād guṇaḥ) and 6.1.88 (vṛddhir eci) are not yet LLM-extracted.
+    These tests document the honest current state: the clean parser cannot
+    handle them, and no LLM row is present yet. Once extraction is run for
+    these sūtras, replace these with positive output assertions.
     """
 
-    def test_6187_clean_parser_fails(self, compiler):
-        """6.1.87: ād guṇaḥ — clean parser misassigns left_context"""
+    def test_6187_not_yet_extracted(self, compiler):
+        """6.1.87: ād guṇaḥ — awaits LLM extraction."""
         s = compiler.compile_sutra("6.1.87")
-        # The clean parser puts left_context='A' instead of target='a,A'
-        # This documents the parser limitation honestly
-        assert not s.matches("rAma", "ISa"), \
-            "6.1.87 fails on clean parser — needs LLM extraction"
+        assert s.spec.parsed_by != "llm_extract", \
+            "6.1.87 now has an LLM row — flip this test to a positive assertion"
 
-    def test_6188_clean_parser_fails(self, compiler):
-        """6.1.88: vṛddhir eci — clean parser produces wrong target (None)"""
+    def test_6188_not_yet_extracted(self, compiler):
+        """6.1.88: vṛddhir eci — awaits LLM extraction."""
         s = compiler.compile_sutra("6.1.88")
-        # The clean parser fails to set target_context for 6.1.88
-        # It matches tava+eva but produces wrong output because target is None
-        assert s.spec.target_context is None, \
-            "6.1.88 clean parser should have no target — needs LLM extraction"
-
-    def test_6101_clean_parser_fails(self, compiler):
-        """6.1.101: akaḥ savarṇe dīrghaḥ — savarṇa is unresolved meta-term"""
-        s = compiler.compile_sutra("6.1.101")
-        assert not s.matches("rAma", "atra"), \
-            "6.1.101 fails on clean parser — needs LLM extraction"
+        assert s.spec.parsed_by != "llm_extract", \
+            "6.1.88 now has an LLM row — flip this test to a positive assertion"
 
 
 class TestPratyaharaMatching:

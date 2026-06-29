@@ -1,0 +1,10 @@
+{
+  "sutra_id": "6.1.179",
+  "hurdle_type": "llm_extraction_failed",
+  "description": "LLM returned: No JSON found in response",
+  "blocking": false,
+  "approach_attempted": "",
+  "commentary_reference": "",
+  "workaround": null,
+  "recorded_at": "2026-06-29T18:42:11Z"
+}

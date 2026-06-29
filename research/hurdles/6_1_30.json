@@ -1,10 +1,10 @@
 {
   "sutra_id": "6.1.30",
-  "hurdle_type": "vocabulary_missing",
-  "description": "Vibhakti parser could not resolve semantics. op_type=governance",
+  "hurdle_type": "llm_extraction_failed",
+  "description": "LLM returned: Ollama API error: HTTP Error 429: Too Many Requests",
   "blocking": false,
-  "approach_attempted": "vibhakti_parse",
+  "approach_attempted": "",
   "commentary_reference": "",
   "workaround": null,
-  "recorded_at": "2026-06-29T16:35:33Z"
+  "recorded_at": "2026-06-29T17:25:03Z"
 }

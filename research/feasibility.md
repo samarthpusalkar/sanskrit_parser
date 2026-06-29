@@ -33,3 +33,9 @@ problems are.
 **Assessment**: Full compilation: 89.1% executable (3547/3983) via vibhakti parser alone. Only 436 non-executable (down from 2730). The DSL parser works without hardcoded special cases. Chapter 1.1: 96%, Chapter 6.1: 81.6%. The remaining 436 likely need LLM extraction or commentary context.
 
 **Evidence**: compile_all() stats: 3547 executable, 436 non-executable, 3980 by vibhakti_parser
+
+## Update 2026-06-29T18:23:25Z
+
+**Assessment**: Chapter 6.1: 96.4% executable (215/223)
+
+**Evidence**: Non-executable: 8. Hurdles recorded in research/hurdles/.

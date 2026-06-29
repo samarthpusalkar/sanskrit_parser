@@ -99,15 +99,15 @@ class CompiledSutra:
             return False
 
         if self.spec.target_context:
-            if not _context_matches(self.spec.target_context, left, "end"):
+            if not _context_matches(self.spec.target_context, left, "end", right):
                 return False
 
         if self.spec.left_context:
-            if not _context_matches(self.spec.left_context, left, "end"):
+            if not _context_matches(self.spec.left_context, left, "end", right):
                 return False
 
         if self.spec.right_context:
-            if not _context_matches(self.spec.right_context, right, "start"):
+            if not _context_matches(self.spec.right_context, right, "start", left):
                 return False
 
         return True
@@ -150,8 +150,33 @@ class CompiledSutra:
         return new_left, new_right
 
 
-def _context_matches(ctx: SutraContext, text: str, pos: str) -> bool:
-    """Check if a context condition matches against a string at the given position."""
+_META_TERM_WILDCARDS = {"savarRa", "savarna", "savRNa", "savaruNa"}
+
+_SAVARNA_CLASSES = [
+    {"a", "A"},
+    {"i", "I"},
+    {"u", "U"},
+    {"f", "F"},
+    {"x", "X"},
+]
+
+
+def _is_savarna(c1: str, c2: str) -> bool:
+    """Two vowels are savarṇa if they share a savarṇa class (same sthāna)."""
+    if not c1 or not c2:
+        return False
+    for cls in _SAVARNA_CLASSES:
+        if c1 in cls and c2 in cls:
+            return True
+    return False
+
+
+def _context_matches(ctx: SutraContext, text: str, pos: str,
+                     other_text: str = "") -> bool:
+    """Check if a context condition matches against a string at the given position.
+
+    other_text is the opposite-side text (used for savarṇa meta-term checks).
+    """
     if not ctx:
         return True
 
@@ -159,6 +184,13 @@ def _context_matches(ctx: SutraContext, text: str, pos: str) -> bool:
         alternatives = [a for a in ctx.exact_text.replace(",", "|").split("|") if a]
         if not alternatives:
             return True
+        # savarṇa meta-term: the two boundary vowels must be homogeneous.
+        if all(alt in _META_TERM_WILDCARDS for alt in alternatives):
+            if not other_text:
+                return True
+            left_char = other_text[-1] if other_text else ""
+            right_char = text[0] if text else ""
+            return _is_savarna(left_char, right_char)
         if pos == "end":
             return any(text.endswith(alt) for alt in alternatives)
         elif pos == "start":

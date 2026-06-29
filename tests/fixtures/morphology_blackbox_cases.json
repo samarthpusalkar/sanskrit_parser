@@ -1,11 +1,11 @@
 [
   {
     "case_id": "MORPH_TIN_001",
-    "sutra_id": "1.1.1",
+    "sutra_id": "3.4.78",
     "domain": "tinganta",
     "interface": "conjugate",
     "inputs": {
-      "root": "bhū",
+      "root": "BU",
       "gana": 1,
       "lakara": "laṭ",
       "purusa": 3,
@@ -14,21 +14,91 @@
     "expected_output": "bhavati",
     "case_kind": "positive",
     "family_id": "basic_conjugation",
-    "expected_rule_presence": true
+    "expected_rule_presence": true,
+    "notes": "bhU + laT 3rd singular -> bhavati (tiG affix 3.4.78, vikarana, sandhi)"
+  },
+  {
+    "case_id": "MORPH_TIN_002",
+    "sutra_id": "3.4.78",
+    "domain": "tinganta",
+    "interface": "conjugate",
+    "inputs": {
+      "root": "gam",
+      "gana": 1,
+      "lakara": "laṭ",
+      "purusa": 3,
+      "vacana": 3
+    },
+    "expected_output": "gacCanti",
+    "case_kind": "perturbation",
+    "family_id": "basic_conjugation",
+    "expected_rule_presence": true,
+    "notes": "gam + laT 3rd plural -> gacchanti"
+  },
+  {
+    "case_id": "MORPH_TIN_003",
+    "sutra_id": "3.4.78",
+    "domain": "tinganta",
+    "interface": "conjugate",
+    "inputs": {
+      "root": "kR",
+      "gana": 8,
+      "lakara": "laṭ",
+      "purusa": 3,
+      "vacana": 1
+    },
+    "expected_output": "karoti",
+    "case_kind": "positive",
+    "family_id": "basic_conjugation",
+    "expected_rule_presence": true,
+    "notes": "kR (8th gana) + laT 3rd singular -> karoti"
   },
   {
     "case_id": "MORPH_SUB_001",
-    "sutra_id": "1.1.1",
+    "sutra_id": "8.2.66",
     "domain": "subanta",
     "interface": "decline",
     "inputs": {
-      "stem": "rāma",
+      "stem": "rAma",
       "case": "nominative",
       "number": "singular"
     },
-    "expected_output": "rāmaḥ",
+    "expected_output": "rAmaH",
     "case_kind": "positive",
     "family_id": "basic_declension",
-    "expected_rule_presence": true
+    "expected_rule_presence": true,
+    "notes": "rAma + suP (nom sg s) -> rAmaH (s -> visarga 8.2.66)"
+  },
+  {
+    "case_id": "MORPH_SUB_002",
+    "sutra_id": "8.2.66",
+    "domain": "subanta",
+    "interface": "decline",
+    "inputs": {
+      "stem": "hari",
+      "case": "nominative",
+      "number": "singular"
+    },
+    "expected_output": "hariH",
+    "case_kind": "perturbation",
+    "family_id": "basic_declension",
+    "expected_rule_presence": true,
+    "notes": "hari + suP (nom sg s) -> hariH (s -> visarga 8.2.66)"
+  },
+  {
+    "case_id": "MORPH_SUB_003",
+    "sutra_id": "8.2.66",
+    "domain": "subanta",
+    "interface": "decline",
+    "inputs": {
+      "stem": "vANa",
+      "case": "nominative",
+      "number": "plural"
+    },
+    "expected_output": "vANAs",
+    "case_kind": "perturbation",
+    "family_id": "basic_declension",
+    "expected_rule_presence": false,
+    "notes": "nom plural jas (s) — visarga does not apply before a pause-internal boundary here; control case"
   }
 ]

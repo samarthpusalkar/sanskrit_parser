@@ -190,5 +190,84 @@
     "tags": [
       "savarna_dirgha"
     ]
+  },
+  {
+    "case_id": "PANINI_6_1_101_NEG_001",
+    "sutra_id": "6.1.101",
+    "domain": "sandhi",
+    "interface": "sandhi_join",
+    "inputs": {
+      "left": "rAma",
+      "right": "ISa"
+    },
+    "expected_output": "rAmeSa",
+    "case_kind": "negative_control",
+    "family_id": "6.1.101_dirgha",
+    "expected_rule_presence": false,
+    "source": "seed_runtime",
+    "notes": "a + i is not savarna, so dirgha must not apply; guNa (6.1.87) should fire once extracted",
+    "tags": [
+      "negative_control",
+      "savarna_dirgha"
+    ]
+  },
+  {
+    "case_id": "PANINI_6_1_101_POS_002",
+    "sutra_id": "6.1.101",
+    "domain": "sandhi",
+    "interface": "sandhi_join",
+    "inputs": {
+      "left": "vadi",
+      "right": "iti"
+    },
+    "expected_output": "vadIti",
+    "case_kind": "positive",
+    "family_id": "6.1.101_dirgha",
+    "expected_rule_presence": true,
+    "source": "seed_runtime",
+    "notes": "i + i homogeneous -> I (dirgha)",
+    "tags": [
+      "savarna_dirgha"
+    ]
+  },
+  {
+    "case_id": "PANINI_6_1_77_PERT_002",
+    "sutra_id": "6.1.77",
+    "domain": "sandhi",
+    "interface": "sandhi_join",
+    "inputs": {
+      "left": "dadhi",
+      "right": "atra"
+    },
+    "expected_output": "dadhyatra",
+    "case_kind": "perturbation",
+    "family_id": "6.1.77_yan",
+    "expected_rule_presence": true,
+    "source": "seed_runtime",
+    "notes": "i -> y before a vowel (different lexical pair)",
+    "tags": [
+      "yan",
+      "dynamic"
+    ]
+  },
+  {
+    "case_id": "PANINI_6_1_77_PERT_003",
+    "sutra_id": "6.1.77",
+    "domain": "sandhi",
+    "interface": "sandhi_join",
+    "inputs": {
+      "left": "hotf",
+      "right": "fzya"
+    },
+    "expected_output": "hotrfzya",
+    "case_kind": "perturbation",
+    "family_id": "6.1.77_yan",
+    "expected_rule_presence": true,
+    "source": "seed_runtime",
+    "notes": "f -> r before a vowel (yan bijection for vocalic r)",
+    "tags": [
+      "yan",
+      "dynamic"
+    ]
   }
 ]

@@ -27,6 +27,29 @@ from .types import SutraSpec, SutraContext, SutraOperation
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "sanskrit_master.db")
 
 
+def _safe_loads(raw, default):
+    """json.loads that treats None/'null'/errors as the default."""
+    if not raw:
+        return default
+    try:
+        value = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return default
+    if value is None:
+        return default
+    return value
+
+
+def _as_set(value):
+    """Coerce a value into a set of strings (handles None / non-iterables)."""
+    if not value:
+        return set()
+    try:
+        return set(str(v) for v in value)
+    except TypeError:
+        return set()
+
+
 class SutraParser:
     """Parses sūtra text into SutraSpec objects."""
 
@@ -102,9 +125,9 @@ class SutraParser:
             op.left_consume = 1
             op.replacement = replacement
 
-        target_ctx = SutraContext(exact_text=target) if target else None
-        left_context = SutraContext(exact_text=left_ctx) if left_ctx else None
-        right_context = SutraContext(exact_text=right_ctx) if right_ctx else None
+        target_ctx = self._ctx_from_llm_term(target, "end")
+        left_context = self._ctx_from_llm_term(left_ctx, "end")
+        right_context = self._ctx_from_llm_term(right_ctx, "start")
 
         if target and len(target) <= 3 and target[0].isupper() is False:
             pass
@@ -116,14 +139,14 @@ class SutraParser:
             target_context=target_ctx,
             left_context=left_context,
             right_context=right_context,
-            conditioning_factors=set(json.loads(cond_factors_json or "[]")),
-            applicable_paribhasas=json.loads(paribhasas_json or "[]"),
+            conditioning_factors=_as_set(_safe_loads(cond_factors_json, [])),
+            applicable_paribhasas=_safe_loads(paribhasas_json, []),
             domain=domain or "sapada",
-            anuvrtti_carries=json.loads(anuvrtti_json or "{}"),
+            anuvrtti_carries=_safe_loads(anuvrtti_json, {}),
             commentary_notes=commentary or "",
             parsed_by="llm_extract",
             confidence=confidence or 0,
-            hurdles=json.loads(hurdles_json or "[]"),
+            hurdles=_safe_loads(hurdles_json, []),
         )
 
     def _from_vibhakti_clean(self, sutra_id: str, sutra_dev: str, pada_cheda: str, sutra_type: str) -> SutraSpec:
@@ -258,6 +281,39 @@ class SutraParser:
             )
 
         return spec
+
+    def _ctx_from_llm_term(self, term: Optional[str], match_pos: str) -> Optional[SutraContext]:
+        """Build a SutraContext from an LLM-extracted term.
+
+        Tries pratyahara resolution first (e.g. 'ak' -> aK pratyahara).
+        Falls back to exact_text. Handles pipe/comma alternatives.
+        """
+        if not term:
+            return None
+        cleaned = term.strip()
+        if not cleaned:
+            return None
+        # Alternatives separated by '|' or ',' — try each as pratyahara.
+        alternatives = [a.strip() for a in cleaned.replace(",", "|").split("|") if a.strip()]
+        pratyaharas = []
+        exacts = []
+        for alt in alternatives:
+            prat = self._try_resolve_pratyahara(alt)
+            if prat:
+                pratyaharas.append(prat)
+            else:
+                exacts.append(alt)
+        ctx = SutraContext(match_pos=match_pos)
+        if pratyaharas and not exacts:
+            ctx.pratyahara = pratyaharas[0]
+        elif pratyaharas and exacts:
+            # Mixed: keep exact text alternatives; pratyahara match is a bonus.
+            ctx.exact_text = "|".join(exacts)
+        else:
+            ctx.exact_text = "|".join(extras) if (extras := exacts) else None
+            if not ctx.exact_text:
+                return None
+        return ctx
 
     def _try_resolve_pratyahara(self, slp: str) -> Optional[str]:
         """Try to resolve a term as a pratyahara using PratyaharaResolver."""

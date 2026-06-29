@@ -13,14 +13,11 @@ is incomplete. They only pass when the engine achieves true coverage.
 
 import os
 import sys
-import json
 
 sys.path.insert(0, os.path.abspath(".."))
 
 from benchmarks.local_engine_adapter import LocalEngineAdapter
 from benchmarks.cases import load_cases
-from benchmarks.catalog import load_rule_universe, annotate_rule_universe
-from benchmarks.reports import build_coverage_summary
 from benchmarks.pipeline import run_pipeline
 
 
@@ -28,28 +25,33 @@ def test_full_sutra_coverage():
     """
     GATE: Every sutra in the canonical universe must be mapped.
     FAILS if any sutra is unmapped (missing rule_config, unloaded, or unexecuted).
+
+    Uses run_pipeline so the executed/loaded sets reflect real engine output
+    instead of a hard-coded empty set.
     """
-    universe = load_rule_universe()
-    adapter = LocalEngineAdapter()
-    loaded_rule_ids = set(adapter.list_loaded_rules())
-    
-    entries = annotate_rule_universe(
-        universe,
-        case_counts={},
-        loaded_rule_ids=loaded_rule_ids,
-        executed_rule_ids=set(),
-        hardcoding_suspect_ids=set(),
+    payload = run_pipeline(
+        case_paths=(
+            "tests/fixtures/panini_blackbox_cases.json",
+            "tests/fixtures/morphology_blackbox_cases.json",
+        ),
     )
-    
+
+    universe = payload["universe"]
+    entries = universe
+
     unmapped = [
         sutra_id for sutra_id, entry in entries.items()
-        if entry.classification != "executed"
+        if entry["classification"] != "executed"
     ]
-    
+
     if unmapped:
+        total = len(entries)
+        coverage = 100 * (total - len(unmapped)) / total if total else 0.0
+        summary = payload["summary"]
         raise AssertionError(
-            f"ENGINE INCOMPLETE: {len(unmapped)} of {len(entries)} sutras are unmapped.\n"
-            f"Coverage: {100*(len(entries)-len(unmapped))/len(entries):.1f}%\n"
+            f"ENGINE INCOMPLETE: {len(unmapped)} of {total} sutras are unmapped.\n"
+            f"Coverage: {coverage:.1f}%\n"
+            f"Classification: {summary['counts_by_classification']}\n"
             f"Sample unmapped: {sorted(unmapped)[:20]}"
         )
 
