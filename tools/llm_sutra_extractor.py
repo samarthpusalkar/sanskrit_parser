@@ -35,11 +35,11 @@ COMMENTARY_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data"
 OLLAMA_URL = "http://localhost:11434/api/generate"
 
 EXTRACTION_SCHEMA = {
-    "operation_type": "one of: exact_substitute, merge, elide, augment, prohibit, prakritibhava, bijection, dirgha, guna, vrddhi, yan, visarga_sandhi, anusvara, natva, samprasarana, pararupa, purva_rupa, non_operational",
-    "target": "the phoneme(s) or pratyahara being operated on (SLP1)",
-    "left_context": "conditioning left context (SLP1 or null)",
-    "right_context": "conditioning right context (SLP1 or null)",
-    "replacement": "what the target becomes (SLP1 or null)",
+    "operation_type": "one of: exact_substitute, merge, elide, augment, prohibit, prakritibhava, bijection, dirgha, guna, vrddhi, yan, visarga_sandhi, anusvara, natva, samprasarana, pararupa, purva_rupa, non_operational. For guna use 'guna', for vrddhi use 'vrddhi', NOT 'merge'.",
+    "target": "the phoneme class being operated on, as a SINGLE pratyahara in SLP1 (e.g. 'aK' for all vowels, 'iK' for i/u/ṛ/ḷ, 'aC' for vowels). Do NOT write descriptive phrases like 'a A ac'. If the target is the preceding vowel, use the pratyahara for that vowel class (e.g. 'a' or 'aK').",
+    "left_context": "conditioning left context as a pratyahara or phoneme in SLP1, or null",
+    "right_context": "conditioning right context as a pratyahara or phoneme in SLP1, or null. For 'before a vowel' use 'aC'. For 'homogeneous' use 'savarRa'.",
+    "replacement": "what the target becomes: for guna use 'guRa', for vrddhi use 'vfdDi', for dirgha use 'dIrGa', for yan use 'yaR'. SLP1.",
     "conditioning_factors": "array of factors making this antaraṅga (inner) vs bahiraṅga (outer)",
     "applicable_paribhasas": "array of paribhāṣā sūtra IDs (e.g., 1.1.50)",
     "domain": "one of: sapada, tripadi, samhita, angasya",
@@ -76,11 +76,14 @@ def ensure_table(conn: sqlite3.Connection):
 def get_sutras_for_chapter(conn: sqlite3.Connection, chapter: str) -> List[Dict]:
     pattern = f"{chapter}.%"
     rows = conn.execute(
-        "SELECT id, sutra_dev, pada_cheda, sutra_type FROM sutras WHERE id LIKE ? ORDER BY id",
+        "SELECT id, sutra_dev, pada_cheda, sutra_type, samasta_sutra, anuvrtti, adhikara "
+        "FROM sutras WHERE id LIKE ? ORDER BY id",
         (pattern,)
     ).fetchall()
     return [
-        {"id": r[0], "sutra_dev": r[1] or "", "pada_cheda": r[2] or "", "sutra_type": r[3] or ""}
+        {"id": r[0], "sutra_dev": r[1] or "", "pada_cheda": r[2] or "",
+         "sutra_type": r[3] or "", "samasta_sutra": r[4] or "",
+         "anuvrtti": r[5] or "", "adhikara": r[6] or ""}
         for r in rows
     ]
 
@@ -116,13 +119,19 @@ def load_commentary(sutra_id: str) -> str:
         return ""
 
 
-def get_previous_sutras(conn: sqlite3.Connection, sutra_id: str, count: int = 3) -> List[Dict]:
-    """Get previous N sūtras for anuvṛtti context."""
+def get_previous_sutras(conn: sqlite3.Connection, sutra_id: str, count: int = 5) -> List[Dict]:
+    """Get previous N sūtras for anuvṛtti context, including samasta/anuvrtti/adhikara."""
     rows = conn.execute(
-        "SELECT id, sutra_dev FROM sutras WHERE id < ? ORDER BY id DESC LIMIT ?",
+        "SELECT id, sutra_dev, samasta_sutra, anuvrtti, adhikara "
+        "FROM sutras WHERE id < ? ORDER BY id DESC LIMIT ?",
         (sutra_id, count)
     ).fetchall()
-    return [{"id": r[0], "text": r[1] or ""} for r in reversed(rows)]
+    out = []
+    for r in reversed(rows):
+        out.append({"id": r[0], "text": r[1] or "",
+                    "samasta_sutra": r[2] or "", "anuvrtti": r[3] or "",
+                    "adhikara": r[4] or ""})
+    return out
 
 
 def is_tripadi(sutra_id: str) -> bool:
@@ -148,11 +157,38 @@ IMPORTANT: This sūtra belongs to the Tripāḍī (8.2–8.4), which has special
 - Rules must be applied in strict chapter order within the Tripāḍī.
 """
 
+    # Expanded sūtra with anuvṛtti already filled in (samasta_sutra).
+    samasta_section = ""
+    if sutra.get("samasta_sutra"):
+        samasta_section = (
+            f"\nExpanded sūtra (samasta, with anuvṛtti words filled in): "
+            f"{sutra['samasta_sutra']}\n"
+        )
+
+    # Anuvṛtti carried into THIS sūtra (from the DB anuvrtti column).
+    anuvrtti_section = ""
+    if sutra.get("anuvrtti"):
+        anuvrtti_section = (
+            f"\nAnuvṛtti carried into this sūtra: {sutra['anuvrtti']}\n"
+        )
+
+    # Adhikāra (governing scope) in effect for this sūtra.
+    adhikara_section = ""
+    if sutra.get("adhikara"):
+        adhikara_section = (
+            f"\nAdhikāra (governing scope) in effect: {sutra['adhikara']}\n"
+        )
+
     prev_context = ""
     if previous_sutras:
         prev_context = "\nPrevious sūtras (for anuvṛtti context):\n"
         for ps in previous_sutras:
-            prev_context += f"  {ps['id']}: {ps['text']}\n"
+            prev_context += f"  {ps['id']}: {ps['text']}"
+            if ps.get("samasta_sutra"):
+                prev_context += f"  [expanded: {ps['samasta_sutra']}]"
+            if ps.get("anuvrtti"):
+                prev_context += f"  [carries: {ps['anuvrtti']}]"
+            prev_context += "\n"
 
     commentary_section = ""
     if commentary:
@@ -164,7 +200,9 @@ Sūtra ID: {sutra_id}
 Sūtra Text (Devanagari): {sutra['sutra_dev']}
 Pada Cheda (word segmentation): {sutra['pada_cheda']}
 Sūtra Type: {sutra['sutra_type']}
-{tripadi_note}{prev_context}{commentary_section}
+{samasta_section}{anuvrtti_section}{adhikara_section}{tripadi_note}{prev_context}{commentary_section}
+The expanded sūtra (samasta) and anuvṛtti fields show which words are carried over from earlier sūtras — use them to determine the full conditioning context, not just the literal sūtra text.
+
 Extract the following JSON object. All phonemes should be in SLP1 transliteration.
 If you cannot determine a field, use null. Be precise about conditioning contexts.
 

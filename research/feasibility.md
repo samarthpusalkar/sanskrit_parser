@@ -39,3 +39,15 @@ problems are.
 **Assessment**: Chapter 6.1: 96.4% executable (215/223)
 
 **Evidence**: Non-executable: 8. Hurdles recorded in research/hurdles/.
+
+## Update 2026-06-29T19:44:16Z
+
+**Assessment**: Chapter 6.1: 73.5% executable (164/223)
+
+**Evidence**: Non-executable: 59. Hurdles recorded in research/hurdles/.
+
+## Update 2026-06-29T19:44:37Z
+
+**Assessment**: Chapter 6.1: 73.5% executable (164/223)
+
+**Evidence**: Non-executable: 59. Hurdles recorded in research/hurdles/.

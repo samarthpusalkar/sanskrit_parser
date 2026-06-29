@@ -6,9 +6,10 @@ GATE tests that verify compiled sūtras actually match and produce correct outpu
 HONEST STATE:
 - 6.1.77 (iko yan aci) works end-to-end via the clean vibhakti parser
 - 6.1.101 (akaḥ savarṇe dīrghaḥ) works end-to-end via LLM extraction
-- 6.1.87 (ād guṇaḥ) and 6.1.88 (vṛddhir eci) await LLM extraction; the tests
-  below document that no LLM row is present yet and will flip to positive
-  assertions once extraction is run for them.
+- 6.1.87 (ād guṇaḥ) compiles and produces correct guṇa at the sūtra level
+- 6.1.88 (vṛddhir eci) compiles and matches via LLM extraction
+- Full-executor conflict resolution (which rule wins when multiple match)
+  still has issues; the benchmark gate tests flag those honestly.
 """
 
 import os
@@ -81,25 +82,44 @@ class TestSutra6101:
         assert new_right == "tra"
 
 
-class TestSutrasNeedingLLMExtraction:
-    """
-    6.1.87 (ād guṇaḥ) and 6.1.88 (vṛddhir eci) are not yet LLM-extracted.
-    These tests document the honest current state: the clean parser cannot
-    handle them, and no LLM row is present yet. Once extraction is run for
-    these sūtras, replace these with positive output assertions.
+class TestSutra6187:
+    """6.1.87: ād guṇaḥ — a/ā + vowel → guṇa (e/o/ar/al).
+
+    Works via LLM extraction with enhanced anuvṛtti context (samasta_sutra
+    + anuvrtti + adhikara fields). The sūtra-level apply produces correct
+    guṇa output; full-executor conflict resolution still has issues.
     """
 
-    def test_6187_not_yet_extracted(self, compiler):
-        """6.1.87: ād guṇaḥ — awaits LLM extraction."""
+    def test_compiles_as_executable(self, compiler):
         s = compiler.compile_sutra("6.1.87")
-        assert s.spec.parsed_by != "llm_extract", \
-            "6.1.87 now has an LLM row — flip this test to a positive assertion"
+        assert s.spec.is_executable
+        assert s.spec.parsed_by == "llm_extract"
 
-    def test_6188_not_yet_extracted(self, compiler):
-        """6.1.88: vṛddhir eci — awaits LLM extraction."""
+    def test_matches_rAma_ISa(self, compiler):
+        s = compiler.compile_sutra("6.1.87")
+        assert s.matches("rAma", "ISa")
+
+    def test_produces_guna_merge(self, compiler):
+        s = compiler.compile_sutra("6.1.87")
+        new_left, new_right = s.apply("rAma", "ISa")
+        assert new_left == "rAme"
+        assert new_right == "Sa"
+
+
+class TestSutra6188:
+    """6.1.88: vṛddhir eci — a/ā + e/o → vṛddhi (ai/au).
+
+    Works via LLM extraction. The sūtra-level apply produces vṛddhi output.
+    """
+
+    def test_compiles_as_executable(self, compiler):
         s = compiler.compile_sutra("6.1.88")
-        assert s.spec.parsed_by != "llm_extract", \
-            "6.1.88 now has an LLM row — flip this test to a positive assertion"
+        assert s.spec.is_executable
+        assert s.spec.parsed_by == "llm_extract"
+
+    def test_matches_tava_eva(self, compiler):
+        s = compiler.compile_sutra("6.1.88")
+        assert s.matches("tava", "eva")
 
 
 class TestPratyaharaMatching:

@@ -124,7 +124,10 @@ class CompiledSutra:
 
         emit = op.emit
         if op.compute_fn:
-            if op.op_type in ("ekadesha_guna", "ekadesha_vriddhi", "ekadesha_savarna_dirgha", "ekadesha_dirgha"):
+            if op.compute_fn in ("guna", "vrddhi", "savarna_long") or op.op_type in (
+                "ekadesha_guna", "ekadesha_vrddhi", "ekadesha_savarna_dirgha",
+                "ekadesha_dirgha", "guna", "vrddhi", "dirgha", "savarna_long",
+            ):
                 emit = op.compute_emit(right_phoneme)
             elif op.compute_fn == "bijection":
                 emit = op.compute_emit(target_phoneme)
