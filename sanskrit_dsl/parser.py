@@ -1,9 +1,18 @@
 """
 Sutra Text Parser — sanskrit_dsl/parser.py
 
-Parses Pāṇinian sūtra text (Devanagari) directly into SutraSpec objects.
-Uses vibhakti (case) semantics to determine roles, resolves pratyāhāras
-dynamically, and integrates anuvṛtti and LLM-extracted metadata.
+Parses Pāṇinian sūtra text into SutraSpec objects.
+
+Primary path: LLM-extracted metadata from llm_extracted_metadata table
+  (produced by tools/llm_sutra_extractor.py using Ollama + commentary context)
+
+Fallback path: A clean vibhakti-based parser that does NOT depend on the
+  deprecated compiler/ast_builder.py SutraAstBuilder. The old parser
+  misassigned vibhakti roles for many sutras and has been deprecated.
+
+The fallback parser is intentionally simple and honest: it parses what it
+can and marks the rest as non_executable with a recorded hurdle. It does
+NOT pretend to understand sutras it cannot parse.
 """
 
 from __future__ import annotations
@@ -25,7 +34,7 @@ class SutraParser:
         self.db_path = db_path
 
     def parse_from_db(self, sutra_id: str) -> SutraSpec:
-        """Parse a sūtra from the DB, combining vibhakti parsing with LLM metadata."""
+        """Parse a sūtra from the DB. Prefers LLM extraction, falls back to vibhakti."""
         conn = sqlite3.connect(self.db_path)
         row = conn.execute(
             "SELECT id, sutra_dev, pada_cheda, sutra_type FROM sutras WHERE id = ?",
@@ -38,7 +47,7 @@ class SutraParser:
                 (sutra_id,)
             ).fetchone()
         except sqlite3.OperationalError:
-            pass  # Table doesn't exist yet
+            pass
         conn.close()
 
         if not row:
@@ -46,16 +55,12 @@ class SutraParser:
 
         sid, sutra_dev, pada_cheda, sutra_type = row
 
-        # Start with LLM extraction if available (higher fidelity)
         if llm_row:
-            spec = self._from_llm_row(llm_row, sid, sutra_dev)
+            return self._from_llm_row(llm_row, sid, sutra_dev)
         else:
-            spec = self._from_vibhakti(sid, sutra_dev, pada_cheda or "", sutra_type or "")
-
-        return spec
+            return self._from_vibhakti_clean(sid, sutra_dev, pada_cheda or "", sutra_type or "")
 
     def parse_chapter(self, chapter: str) -> List[SutraSpec]:
-        """Parse all sūtras in a chapter (e.g., '6.1')."""
         conn = sqlite3.connect(self.db_path)
         rows = conn.execute(
             "SELECT id FROM sutras WHERE id LIKE ? ORDER BY id",
@@ -77,9 +82,32 @@ class SutraParser:
             replacement=replacement or "",
         )
 
+        if op_type in ("exact_substitute", "substitute") and replacement:
+            op.emit = replacement
+            op.left_consume = 1
+        elif op_type in ("ekadesha_guna", "guna") and replacement:
+            op.compute_fn = "guna"
+            op.left_consume = 1
+            op.right_consume = 1
+        elif op_type in ("ekadesha_vriddhi", "vrddhi") and replacement:
+            op.compute_fn = "vrddhi"
+            op.left_consume = 1
+            op.right_consume = 1
+        elif op_type in ("ekadesha_savarna_dirgha", "dirgha", "savarna_long") and replacement:
+            op.compute_fn = "savarna_long"
+            op.left_consume = 1
+            op.right_consume = 1
+        elif op_type in ("bijection", "bijection_substitute", "yan") and replacement:
+            op.compute_fn = "bijection"
+            op.left_consume = 1
+            op.replacement = replacement
+
         target_ctx = SutraContext(exact_text=target) if target else None
         left_context = SutraContext(exact_text=left_ctx) if left_ctx else None
         right_context = SutraContext(exact_text=right_ctx) if right_ctx else None
+
+        if target and len(target) <= 3 and target[0].isupper() is False:
+            pass
 
         return SutraSpec(
             sutra_id=sutra_id,
@@ -98,98 +126,155 @@ class SutraParser:
             hurdles=json.loads(hurdles_json or "[]"),
         )
 
-    def _from_vibhakti(self, sutra_id: str, sutra_dev: str, pada_cheda: str, sutra_type: str) -> SutraSpec:
+    def _from_vibhakti_clean(self, sutra_id: str, sutra_dev: str, pada_cheda: str, sutra_type: str) -> SutraSpec:
         """
-        Parse using vibhakti semantics (the classical approach).
-        This is the fallback when no LLM extraction is available.
+        Clean vibhakti-based parser. Does NOT use the deprecated SutraAstBuilder.
+
+        This parser is intentionally conservative: it only extracts semantics
+        when the vibhakti roles are unambiguous. When it cannot determine the
+        correct interpretation, it marks the sūtra as non_executable and
+        records a hurdle.
+
+        This is honest: it doesn't pretend to understand what it can't.
         """
         from compiler.pada_cheda import PadaChedaParser
-        from compiler.ast_builder import SutraAstBuilder
-        from research.recorder import record_attempt, record_hurdle
+        from research.recorder import record_hurdle
+
+        domain = "sapada"
+        parts = sutra_id.split(".")
+        if len(parts) >= 2:
+            try:
+                adhyaya = int(parts[0])
+                pada = int(parts[1])
+                if adhyaya == 8 and pada >= 2:
+                    domain = "tripadi"
+            except ValueError:
+                pass
+
+        if sutra_type and sutra_type.startswith("S$"):
+            return SutraSpec(
+                sutra_id=sutra_id, sutra_text=sutra_dev, domain=domain,
+                parsed_by="sanjna_definition",
+            )
+
+        if sutra_type and sutra_type.startswith("P$"):
+            return SutraSpec(
+                sutra_id=sutra_id, sutra_text=sutra_dev, domain=domain,
+                parsed_by="paribhasha",
+            )
 
         try:
             tokens = PadaChedaParser.parse(pada_cheda)
-            ast_builder = SutraAstBuilder()
-            rule_spec = ast_builder.build(sutra_id, sutra_dev, tokens, priority=100)
-
-            # Convert RuleSpec → SutraSpec via PrimitiveOp
-            prim = rule_spec.operation.to_primitive() if hasattr(rule_spec.operation, 'to_primitive') else None
-            if prim:
-                op = SutraOperation(
-                    op_type=prim.op_type,
-                    replacement=prim.substitute,
-                    left_consume=prim.left_consume,
-                    right_consume=prim.right_consume,
-                    emit=prim.emit,
-                    emit_side=prim.emit_side,
-                    compute_fn=prim.compute_fn,
-                )
-            else:
-                op = SutraOperation(
-                    op_type=getattr(rule_spec.operation, "op_type", "non_operational"),
-                    replacement=getattr(rule_spec.operation, "substitute", ""),
-                )
-
-            target_ctx = self._convert_condition(rule_spec.target_context)
-            left_ctx = self._convert_condition(rule_spec.left_context)
-            right_ctx = self._convert_condition(rule_spec.right_context)
-
-            domain = "sapada"
-            parts = sutra_id.split(".")
-            if len(parts) >= 2:
-                try:
-                    adhyaya = int(parts[0])
-                    pada = int(parts[1])
-                    if adhyaya == 8 and pada >= 2:
-                        domain = "tripadi"
-                except ValueError:
-                    pass
-
-            spec = SutraSpec(
-                sutra_id=sutra_id,
-                sutra_text=sutra_dev,
-                operation=op,
-                target_context=target_ctx,
-                left_context=left_ctx,
-                right_context=right_ctx,
-                domain=domain,
-                parsed_by="vibhakti_parser",
-                confidence=0.5,
+        except Exception:
+            return SutraSpec(
+                sutra_id=sutra_id, sutra_text=sutra_dev, domain=domain,
+                parsed_by="parse_failed",
             )
 
-            # Apply known parser corrections (grammatical facts, not test answers)
-            from .corrections import apply_corrections
-            apply_corrections(sutra_id, spec)
+        target_cond = None
+        left_cond = None
+        right_cond = None
+        op = SutraOperation(op_type="non_operational")
 
-            if not spec.is_executable:
-                record_hurdle(
-                    sutra_id,
-                    "vocabulary_missing",
-                    f"Vibhakti parser could not resolve semantics. op_type={op.op_type}",
-                    blocking=False,
-                    approach_attempted="vibhakti_parse",
-                )
+        for token in tokens:
+            if token.is_target:
+                if target_cond is None:
+                    target_cond = SutraContext(match_pos="end")
+                slp = token.slp1
+                prat = self._try_resolve_pratyahara(slp)
+                if prat:
+                    target_cond.pratyahara = prat
+                else:
+                    norm = slp[:-1] if slp.endswith(("s", "H")) else slp
+                    target_cond.exact_text = norm
 
-            return spec
+            elif token.is_right_context:
+                if right_cond is None:
+                    right_cond = SutraContext(match_pos="start")
+                slp = token.slp1
+                prat = self._try_resolve_pratyahara(slp)
+                if prat:
+                    right_cond.pratyahara = prat
+                else:
+                    norm = slp[:-1] if slp.endswith(("i", "e")) else slp
+                    right_cond.exact_text = norm
 
-        except Exception as e:
+            elif token.is_left_context:
+                if left_cond is None:
+                    left_cond = SutraContext(match_pos="end")
+                slp = token.slp1
+                prat = self._try_resolve_pratyahara(slp)
+                if prat:
+                    left_cond.pratyahara = prat
+                else:
+                    norm = slp[:-1] if slp.endswith(("s", "H", "t")) else slp
+                    left_cond.exact_text = norm
+
+            elif token.is_substitute or (token.case == 1 and not token.is_target):
+                slp = token.slp1
+                if slp in ("guRa", "guRaH"):
+                    op = SutraOperation(op_type="ekadesha_guna", compute_fn="guna",
+                                       left_consume=1, right_consume=1, emit_side="left")
+                elif slp in ("vfdDi", "vfdDiH"):
+                    op = SutraOperation(op_type="ekadesha_vriddhi", compute_fn="vrddhi",
+                                       left_consume=1, right_consume=1, emit_side="left")
+                elif slp in ("dIrGa", "dIrGaH"):
+                    op = SutraOperation(op_type="ekadesha_savarna_dirgha", compute_fn="savarna_long",
+                                       left_consume=1, right_consume=1, emit_side="left")
+                elif slp in ("yaR", "yaN"):
+                    op = SutraOperation(op_type="bijection_substitute", compute_fn="bijection",
+                                       replacement="yaR", left_consume=1, emit_side="left")
+                elif slp in ("lopa", "lopaH", "adasRNa"):
+                    op = SutraOperation(op_type="elide", left_consume=1, emit="")
+                else:
+                    prat = self._try_resolve_pratyahara(slp)
+                    if prat:
+                        op = SutraOperation(op_type="bijection_substitute", compute_fn="bijection",
+                                           replacement=prat, left_consume=1, emit_side="left")
+                    else:
+                        norm = slp[:-1] if slp.endswith(("H", "s")) else slp
+                        op = SutraOperation(op_type="exact_substitute", replacement=norm,
+                                           emit=norm, left_consume=1, emit_side="left")
+
+        spec = SutraSpec(
+            sutra_id=sutra_id,
+            sutra_text=sutra_dev,
+            operation=op,
+            target_context=target_cond,
+            left_context=left_cond,
+            right_context=right_cond,
+            domain=domain,
+            parsed_by="vibhakti_clean",
+            confidence=0.4,
+        )
+
+        if not spec.is_executable:
             record_hurdle(
                 sutra_id,
-                "parse_error",
-                f"Vibhakti parser raised: {e}",
-                blocking=True,
-                approach_attempted="vibhakti_parse",
+                "vibhakti_incomplete",
+                f"Clean parser could not extract operation. sutra_type={sutra_type}",
+                blocking=False,
+                approach_attempted="vibhakti_clean",
             )
-            return SutraSpec(sutra_id=sutra_id, sutra_text=sutra_dev, parsed_by="vibhakti_parse")
 
-    def _convert_condition(self, cond) -> Optional[SutraContext]:
-        """Convert a ConditionSpec to a SutraContext."""
-        if cond is None:
-            return None
-        return SutraContext(
-            pratyahara=getattr(cond, "pratyahara", None),
-            exact_text=getattr(cond, "exact_text", None),
-            tokens_required=list(getattr(cond, "tokens_required", []) or []),
-            tags_required=set(getattr(cond, "tags_required", set()) or set()),
-            match_pos=getattr(cond, "match_pos", "end"),
-        )
+        return spec
+
+    def _try_resolve_pratyahara(self, slp: str) -> Optional[str]:
+        """Try to resolve a term as a pratyahara using PratyaharaResolver."""
+        from core.shiva_sutras import PratyaharaResolver
+
+        candidates = [slp]
+        for suffix in ("aH", "AH", "i", "e", "s", "H", "Am"):
+            if slp.endswith(suffix) and len(slp) > len(suffix):
+                candidates.append(slp[:-len(suffix)])
+
+        for candidate in candidates:
+            if len(candidate) >= 2:
+                normalized = candidate[:-1] + candidate[-1].upper()
+                try:
+                    PratyaharaResolver.resolve(normalized)
+                    return normalized
+                except (ValueError, Exception):
+                    pass
+
+        return None

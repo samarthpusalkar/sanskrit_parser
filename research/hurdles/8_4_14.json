@@ -1,0 +1,10 @@
+{
+  "sutra_id": "8.4.14",
+  "hurdle_type": "vibhakti_incomplete",
+  "description": "Clean parser could not extract operation. sutra_type=V$$",
+  "blocking": false,
+  "approach_attempted": "vibhakti_clean",
+  "commentary_reference": "",
+  "workaround": null,
+  "recorded_at": "2026-06-29T17:02:04Z"
+}

@@ -1,0 +1,10 @@
+{
+  "sutra_id": "6.3.41",
+  "hurdle_type": "vibhakti_incomplete",
+  "description": "Clean parser could not extract operation. sutra_type=AT$उत्तरपदाधिकारे पुंवद्भावातिदेशः$",
+  "blocking": false,
+  "approach_attempted": "vibhakti_clean",
+  "commentary_reference": "",
+  "workaround": null,
+  "recorded_at": "2026-06-29T17:02:04Z"
+}

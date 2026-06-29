@@ -42,7 +42,7 @@ class ParibhashaRegistry:
         from .parser import SutraParser
         parser = SutraParser(self.db_path)
         for sid, sutra_dev, pada_cheda in rows:
-            spec = parser._from_vibhakti(sid, sutra_dev or "", pada_cheda or "", "P")
+            spec = parser._from_vibhakti_clean(sid, sutra_dev or "", pada_cheda or "", "P")
             self.axioms[sid] = spec
 
         self._loaded = True
@@ -179,19 +179,25 @@ class AntarangaResolver:
                 return inner
 
         # Specificity: more specific target wins
-        # (smaller pratyahara set = more specific; exact_text = most specific)
+        # (smaller pratyahara set = more specific; exact_text = most specific;
+        #  more contexts = more specific)
         from core.shiva_sutras import PratyaharaResolver
         def specificity_score(spec: SutraSpec) -> int:
             score = 0
             if spec.target_context and spec.target_context.exact_text:
                 alternatives = spec.target_context.exact_text.replace(",", "|").split("|")
-                score += 1000 - len(alternatives) * 100  # exact text is very specific
+                score += 1000 - len(alternatives) * 100
             if spec.target_context and spec.target_context.pratyahara:
                 try:
                     phonemes = PratyaharaResolver.resolve(spec.target_context.pratyahara)
-                    score += 100 - len(phonemes)  # smaller set = higher score
+                    score += 100 - len(phonemes)
                 except (ValueError, Exception):
                     pass
+            # More contexts = more specific
+            if spec.right_context:
+                score += 50
+            if spec.left_context:
+                score += 50
             return score
 
         scored = [(specificity_score(s), s) for s in candidates]

@@ -1,0 +1,10 @@
+{
+  "sutra_id": "3.3.135",
+  "hurdle_type": "vibhakti_incomplete",
+  "description": "Clean parser could not extract operation. sutra_type=AT$अनद्यतनवत् प्रत्ययविधेः प्रतिषेधातिदेशः$",
+  "blocking": false,
+  "approach_attempted": "vibhakti_clean",
+  "commentary_reference": "",
+  "workaround": null,
+  "recorded_at": "2026-06-29T17:02:03Z"
+}

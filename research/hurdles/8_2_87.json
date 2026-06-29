@@ -1,10 +1,10 @@
 {
   "sutra_id": "8.2.87",
-  "hurdle_type": "vocabulary_missing",
-  "description": "Vibhakti parser could not resolve semantics. op_type=governance",
+  "hurdle_type": "vibhakti_incomplete",
+  "description": "Clean parser could not extract operation. sutra_type=V$$",
   "blocking": false,
-  "approach_attempted": "vibhakti_parse",
+  "approach_attempted": "vibhakti_clean",
   "commentary_reference": "",
   "workaround": null,
-  "recorded_at": "2026-06-29T16:35:33Z"
+  "recorded_at": "2026-06-29T17:02:04Z"
 }
