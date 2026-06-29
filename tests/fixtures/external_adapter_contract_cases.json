@@ -1,0 +1,21 @@
+[
+  {
+    "case_id": "ADAPTER_CONTRACT_001",
+    "sutra_id": "6.1.77",
+    "domain": "sandhi",
+    "interface": "sandhi_join",
+    "inputs": {
+      "left": "hari",
+      "right": "atra"
+    },
+    "expected_output": "haryatra",
+    "case_kind": "positive",
+    "family_id": "adapter_contract",
+    "expected_rule_presence": true,
+    "source": "adapter_contract",
+    "notes": "Minimal contract fixture for external adapters.",
+    "tags": [
+      "contract"
+    ]
+  }
+]

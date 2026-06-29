@@ -165,6 +165,48 @@ class UniversalRuleEngine:
                         s += 5.0
         return s
 
+    @staticmethod
+    def _finalize_forward_result(
+        raw_ctx: Optional[Dict[str, Any]],
+        exec_ctx: Any,
+        left: str,
+        right: str,
+    ) -> Tuple[str, str]:
+        if isinstance(raw_ctx, dict) and exec_ctx is not None:
+            raw_ctx["_dispatch_output"] = (left, right)
+            raw_ctx["_applied_rule_ids"] = sorted(exec_ctx.trace.rules_applied())
+            raw_ctx["_execution_trace"] = exec_ctx.trace.to_dict()
+            raw_ctx["_execution_context"] = exec_ctx
+        return left, right
+
+    def dispatch_forward_with_metadata(
+        self,
+        left: str,
+        right: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Run forward dispatch and return structured benchmark-friendly evidence."""
+        raw_ctx = dict(context or {})
+        out_left, out_right = self.dispatch_forward(left, right, raw_ctx)
+        trace_payload = raw_ctx.get(
+            "_execution_trace",
+            {
+                "initial_left": left,
+                "initial_right": right,
+                "current_left": out_left,
+                "current_right": out_right,
+                "applied_rule_ids": [],
+                "steps": [],
+            },
+        )
+        return {
+            "left": out_left,
+            "right": out_right,
+            "joined": out_left + out_right,
+            "applied_rule_ids": list(raw_ctx.get("_applied_rule_ids", [])),
+            "trace": trace_payload,
+        }
+
     # ------------------------------------------------------------------
     # Forward dispatch
     # ------------------------------------------------------------------
@@ -184,7 +226,7 @@ class UniversalRuleEngine:
         from rule_engine.trace import DerivationTrace
         from core.sanjña_tagger import SanjanaTagger
 
-        raw_ctx = context or {}
+        raw_ctx = context if context is not None else {}
         is_samasa = raw_ctx.get("is_samasa", False)
 
         exec_ctx = ExecutionContext(
@@ -196,7 +238,7 @@ class UniversalRuleEngine:
         # --- Phase 0: Nipātana lookup ---
         nipatana_out = self._nipatana_lookup(left, right)
         if nipatana_out is not None:
-            return nipatana_out, ""
+            return self._finalize_forward_result(raw_ctx, exec_ctx, nipatana_out, "")
 
         # --- Phase 1: Sañjñā tagging ---
         morph_left = raw_ctx.get("morph_left", {})
@@ -207,7 +249,7 @@ class UniversalRuleEngine:
         if "pragrhya" in exec_ctx.sanjña_map.get("left", set()):
             from core.phonology import VOWELS
             if right and right[0] in VOWELS:
-                return left + " ", right
+                return self._finalize_forward_result(raw_ctx, exec_ctx, left + " ", right)
 
         # Initialise derivation trace
         exec_ctx.trace = DerivationTrace(initial_left=left, initial_right=right)
@@ -238,7 +280,7 @@ class UniversalRuleEngine:
                 if r.matches(cur_l, cur_r, exec_ctx):
                     op_type = getattr(getattr(r, "spec", None), "operation", None)
                     if op_type and getattr(op_type, "op_type", "") in {"prohibit", "prakritibhava"}:
-                        return cur_l, cur_r
+                        return self._finalize_forward_result(raw_ctx, exec_ctx, cur_l, cur_r)
                     new_l, new_r = r.apply(cur_l, cur_r, exec_ctx)
                     if new_l != cur_l or new_r != cur_r:
                         consumed = cur_l[-1] if cur_l else ""
@@ -282,7 +324,7 @@ class UniversalRuleEngine:
                 if r.matches(check_l, check_r, exec_ctx):
                     op_type = getattr(getattr(r, "spec", None), "operation", None)
                     if op_type and getattr(op_type, "op_type", "") in {"prohibit", "prakritibhava"}:
-                        return cur_l, cur_r
+                        return self._finalize_forward_result(raw_ctx, exec_ctx, cur_l, cur_r)
                     candidate_result = r.apply(cur_l, cur_r, exec_ctx)
                     if candidate_result != (cur_l, cur_r):
                         matches.append((r, rule_chapter, candidate_result))
@@ -300,7 +342,7 @@ class UniversalRuleEngine:
             applied_rules = exec_ctx.trace.rules_applied()
             mutated = True
 
-        return cur_l, cur_r
+        return self._finalize_forward_result(raw_ctx, exec_ctx, cur_l, cur_r)
 
 
     def dispatch_revert(self, surface: str, context: Dict[str, Any] = None) -> List[Tuple[str, str]]:
@@ -387,4 +429,3 @@ class UniversalRuleEngine:
         result_list = list(results)
         self._revert_cache[cache_key] = result_list
         return result_list
-

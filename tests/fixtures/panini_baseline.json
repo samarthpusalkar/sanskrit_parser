@@ -1,0 +1,15 @@
+{
+  "summary": {
+    "benchmarked_sutras": 4,
+    "counts_by_classification": {
+      "adapter_pending": 1251,
+      "executed": 4,
+      "rule_config_only": 2728
+    },
+    "dynamically_executed_sutras": 4,
+    "hardcoding_suspicions": 0,
+    "runtime_loaded_sutras": 1255,
+    "sutras_with_rule_configs": 3983,
+    "total_sutras": 3983
+  }
+}

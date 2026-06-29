@@ -1,0 +1,194 @@
+[
+  {
+    "case_id": "PANINI_6_1_77_POS_001",
+    "sutra_id": "6.1.77",
+    "domain": "sandhi",
+    "interface": "sandhi_join",
+    "inputs": {
+      "left": "hari",
+      "right": "atra"
+    },
+    "expected_output": "haryatra",
+    "case_kind": "positive",
+    "family_id": "6.1.77_yan",
+    "expected_rule_presence": true,
+    "source": "seed_runtime",
+    "notes": "i -> y before a vowel",
+    "tags": [
+      "yan",
+      "dynamic"
+    ]
+  },
+  {
+    "case_id": "PANINI_6_1_77_PERT_001",
+    "sutra_id": "6.1.77",
+    "domain": "sandhi",
+    "interface": "sandhi_join",
+    "inputs": {
+      "left": "guru",
+      "right": "atra"
+    },
+    "expected_output": "gurvatra",
+    "case_kind": "perturbation",
+    "family_id": "6.1.77_yan",
+    "expected_rule_presence": true,
+    "source": "seed_runtime",
+    "notes": "u -> v before a vowel",
+    "tags": [
+      "yan",
+      "dynamic"
+    ]
+  },
+  {
+    "case_id": "PANINI_6_1_77_NEG_001",
+    "sutra_id": "6.1.77",
+    "domain": "sandhi",
+    "interface": "sandhi_join",
+    "inputs": {
+      "left": "rAma",
+      "right": "atra"
+    },
+    "expected_output": "rAmAtra",
+    "case_kind": "negative_control",
+    "family_id": "6.1.77_yan",
+    "expected_rule_presence": false,
+    "source": "seed_runtime",
+    "notes": "a-final should not trigger yaN",
+    "tags": [
+      "negative_control"
+    ]
+  },
+  {
+    "case_id": "PANINI_6_1_87_POS_001",
+    "sutra_id": "6.1.87",
+    "domain": "sandhi",
+    "interface": "sandhi_join",
+    "inputs": {
+      "left": "rAma",
+      "right": "ISa"
+    },
+    "expected_output": "rAmeSa",
+    "case_kind": "positive",
+    "family_id": "6.1.87_guna",
+    "expected_rule_presence": true,
+    "source": "seed_runtime",
+    "notes": "a + i -> e",
+    "tags": [
+      "guna"
+    ]
+  },
+  {
+    "case_id": "PANINI_6_1_87_PERT_001",
+    "sutra_id": "6.1.87",
+    "domain": "sandhi",
+    "interface": "sandhi_join",
+    "inputs": {
+      "left": "deva",
+      "right": "indra"
+    },
+    "expected_output": "devendra",
+    "case_kind": "perturbation",
+    "family_id": "6.1.87_guna",
+    "expected_rule_presence": true,
+    "source": "seed_runtime",
+    "notes": "another guNa merge case",
+    "tags": [
+      "guna"
+    ]
+  },
+  {
+    "case_id": "PANINI_6_1_89_POS_001",
+    "sutra_id": "6.1.89",
+    "domain": "sandhi",
+    "interface": "sandhi_join",
+    "inputs": {
+      "left": "tava",
+      "right": "eva"
+    },
+    "expected_output": "tavEva",
+    "case_kind": "positive",
+    "family_id": "6.1.89_vrddhi_runtime",
+    "expected_rule_presence": true,
+    "source": "seed_runtime",
+    "notes": "Runtime currently attributes this vrddhi-style merge to 6.1.89",
+    "tags": [
+      "vrddhi"
+    ]
+  },
+  {
+    "case_id": "PANINI_6_1_89_PERT_001",
+    "sutra_id": "6.1.89",
+    "domain": "sandhi",
+    "interface": "sandhi_join",
+    "inputs": {
+      "left": "na",
+      "right": "eva"
+    },
+    "expected_output": "nEva",
+    "case_kind": "perturbation",
+    "family_id": "6.1.89_vrddhi_runtime",
+    "expected_rule_presence": true,
+    "source": "seed_runtime",
+    "notes": "same family with a different lexical pair",
+    "tags": [
+      "vrddhi"
+    ]
+  },
+  {
+    "case_id": "PANINI_6_1_89_NEG_001",
+    "sutra_id": "6.1.89",
+    "domain": "sandhi",
+    "interface": "sandhi_join",
+    "inputs": {
+      "left": "deva",
+      "right": "indra"
+    },
+    "expected_output": "devendra",
+    "case_kind": "negative_control",
+    "family_id": "6.1.89_vrddhi_runtime",
+    "expected_rule_presence": false,
+    "source": "seed_runtime",
+    "notes": "guNa case should not be misattributed to vRddhi",
+    "tags": [
+      "negative_control"
+    ]
+  },
+  {
+    "case_id": "PANINI_6_1_101_POS_001",
+    "sutra_id": "6.1.101",
+    "domain": "sandhi",
+    "interface": "sandhi_join",
+    "inputs": {
+      "left": "rAma",
+      "right": "atra"
+    },
+    "expected_output": "rAmAtra",
+    "case_kind": "positive",
+    "family_id": "6.1.101_dirgha",
+    "expected_rule_presence": true,
+    "source": "seed_runtime",
+    "notes": "a + a -> A",
+    "tags": [
+      "savarna_dirgha"
+    ]
+  },
+  {
+    "case_id": "PANINI_6_1_101_PERT_001",
+    "sutra_id": "6.1.101",
+    "domain": "sandhi",
+    "interface": "sandhi_join",
+    "inputs": {
+      "left": "deva",
+      "right": "atra"
+    },
+    "expected_output": "devAtra",
+    "case_kind": "perturbation",
+    "family_id": "6.1.101_dirgha",
+    "expected_rule_presence": true,
+    "source": "seed_runtime",
+    "notes": "same dirgha merge with a different lexical pair",
+    "tags": [
+      "savarna_dirgha"
+    ]
+  }
+]

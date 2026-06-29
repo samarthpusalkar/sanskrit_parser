@@ -28,6 +28,32 @@ class SandhiEngine:
         return res_l + res_r
 
     @classmethod
+    def join_with_metadata(cls, w1: str, w2: str) -> dict:
+        """Forward sandhi joining with derivation evidence for benchmarking."""
+        if not w1:
+            return {"joined": w2, "left": "", "right": w2, "applied_rule_ids": [], "trace": {"steps": []}}
+        if not w2:
+            return {"joined": w1, "left": w1, "right": "", "applied_rule_ids": [], "trace": {"steps": []}}
+
+        from rules.engine import UniversalRuleEngine
+        from compiler.pipeline import PratyaharaResolver
+
+        engine = UniversalRuleEngine.get_instance()
+        meta = engine.dispatch_forward_with_metadata(w1, w2)
+        res_l = meta["left"]
+        res_r = meta["right"]
+
+        def _is_vowel_or_pluta(c: str) -> bool:
+            return c == '3' or PratyaharaResolver.contains("aC", c)
+
+        joined = res_l + res_r
+        if res_l and res_r and (_is_vowel_or_pluta(res_l[-1]) or res_l.endswith('3')) and _is_vowel_or_pluta(res_r[0]):
+            joined = res_l + " " + res_r
+
+        meta["joined"] = joined
+        return meta
+
+    @classmethod
     def split(cls, text: str) -> List[Tuple[str, str]]:
         """Backward sandhi splitting via universal sūtra inversions."""
         results: List[Tuple[str, str]] = []

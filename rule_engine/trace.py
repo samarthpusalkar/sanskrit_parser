@@ -28,6 +28,19 @@ class DerivationStep:
     emitted_phoneme: str            # What was emitted in its place
     sthani_tags: Set[str] = field(default_factory=set)  # Tags from original phoneme transferred by sthānivadbhāva
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "rule_id": self.rule_id,
+            "rule_chapter": self.rule_chapter,
+            "left_in": self.left_in,
+            "right_in": self.right_in,
+            "left_out": self.left_out,
+            "right_out": self.right_out,
+            "consumed_phoneme": self.consumed_phoneme,
+            "emitted_phoneme": self.emitted_phoneme,
+            "sthani_tags": sorted(self.sthani_tags),
+        }
+
 
 @dataclass
 class DerivationTrace:
@@ -118,3 +131,13 @@ class DerivationTrace:
 
     def rules_applied(self) -> Set[str]:
         return {s.rule_id for s in self.steps}
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "initial_left": self.initial_left,
+            "initial_right": self.initial_right,
+            "current_left": self.current_left,
+            "current_right": self.current_right,
+            "applied_rule_ids": [step.rule_id for step in self.steps],
+            "steps": [step.to_dict() for step in self.steps],
+        }
