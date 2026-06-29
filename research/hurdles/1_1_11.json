@@ -1,0 +1,10 @@
+{
+  "sutra_id": "1.1.11",
+  "hurdle_type": "parse_error",
+  "description": "Vibhakti parser raised: [PaninianCompilationError] 1.1.11 (ईदूदेद्द्विवचनं प्रगृह्यम्): Unresolved operational transformation context in Vidhi rule\n  Failed Token: '<context>'\n  Missing AST Slots: target",
+  "blocking": true,
+  "approach_attempted": "vibhakti_parse",
+  "commentary_reference": "",
+  "workaround": null,
+  "recorded_at": "2026-06-29T15:49:46Z"
+}
