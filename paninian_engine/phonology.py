@@ -95,6 +95,10 @@ class PhonologyBridge:
                     if not any(right.startswith(e) for e in exact): return False
                 elif isinstance(exact, str):
                     if not right.startswith(exact): return False
+            tokens_req = rc.get("tokens_required")
+            if tokens_req:
+                if not any(right.startswith(t) or right == t for t in tokens_req):
+                    return False
             if pclass == "vowel" and not self._is_in_pratyahara(first_char, "aC"):
                 return False
             if pclass == "consonant" and not self._is_in_pratyahara(first_char, "haL"):
@@ -118,6 +122,10 @@ class PhonologyBridge:
                     if not any(left.endswith(e) for e in exact): return False
                 elif isinstance(exact, str):
                     if not left.endswith(exact): return False
+            tokens_req = lc.get("tokens_required")
+            if tokens_req:
+                if not any(left == t or left.endswith(t) for t in tokens_req):
+                    return False
             if pclass == "short_vowel" and not self._is_in_pratyahara(last_char, "aK"):
                 return False
             if pclass == "nasal" and not self._is_in_pratyahara(last_char, "ṅaM"):
@@ -133,7 +141,7 @@ class PhonologyBridge:
         op_type = op.get("op_type", rule.effect_type)
 
         if op_type == "prakritibhava":
-            return f"{left} {right}", False
+            return f"{left} {right}", True
 
         # Vowel Sandhi operations (left ends with aC, right starts with aC)
         if left and right and self._is_in_pratyahara(left[-1], "aC") and self._is_in_pratyahara(right[0], "aC"):
@@ -247,7 +255,25 @@ class PhonologyBridge:
         if op_type == "indeclinable_r":
             return f"{left}{right}", True
 
-        if rule.effect_type and rule.effect_type not in ("DIRECT_JOIN", "NORMAL"):
-            return rule.effect_type, True
+        if op_type == "avagraha":
+            if left.endswith(("e", "o")) and right.startswith("a"):
+                return f"{left}'{right[1:]}", True
 
-        return f"{left}{right}", True
+        if op_type == "visarga_utva":
+            if left.endswith("ḥ") and right.startswith("a"):
+                return f"{left[:-1]}o{right[1:]}", True
+
+        if op_type == "ro_ri_dirgha":
+            if left.endswith("r") and right.startswith("r"):
+                return f"{left}r{right[1:]}", True
+
+        if op_type == "sascho_ati":
+            if left[-1] in ("c", "j") and right.startswith("ś"):
+                return f"{left[:-1]}cch{right[1:]}", True
+
+        if op_type == "yaro_anunasike":
+            nasal_map = {"t": "n", "d": "n", "k": "ṅ", "p": "m", "c": "ñ"}
+            if left[-1] in nasal_map and right[0] in ("n", "m", "ñ", "ṇ", "ṅ"):
+                return f"{left[:-1]}{nasal_map.get(left[-1], left[-1])}{right}", True
+
+        return f"{left}{right}", False

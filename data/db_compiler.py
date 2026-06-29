@@ -237,6 +237,9 @@ def compile_database(db_path="data/sanskrit_master.db", data_dir="data/ashtadhya
     conn.close()
     print(f"[*] Master Database Compilation Successfully Completed at {db_path}!")
 
+    from data.bootstrap_all import bootstrap_all
+    bootstrap_all(db_path)
+
 
 if __name__ == "__main__":
     compile_database()

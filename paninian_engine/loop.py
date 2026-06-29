@@ -143,24 +143,9 @@ def apply_rule(state: DerivationState, rule: RuleObject) -> DerivationState:
             new_state.trace.append(f"Applied rule {rule.sutra_id} producing {res}")
             return new_state
 
-    # Standard fallback mutation
-    for t in new_state.tokens:
-        curr_state = t.graph.get(t.current_state_id)
-        if curr_state.phoneme in rule.conditioning_factors or not rule.conditioning_factors:
-            new_token_state = TokenState(
-                state_id=f"{curr_state.state_id}_{rule.sutra_id}_{rule.effect_type}",
-                phoneme=rule.effect_type,
-                lexical_category=curr_state.lexical_category,
-                rule_id_applied=rule.sutra_id,
-                parent_ids=frozenset([curr_state.state_id])
-            )
-            t.graph.register(new_token_state)
-            t.current_state_id = new_token_state.state_id
-            site_id = curr_state.state_id
-            break
+        new_state.trace.append(f"Rule {rule.sutra_id} eligible but produced no phonological change")
+        return new_state
 
-    new_state.applied_rules.append((rule.sutra_id, site_id))
-    new_state.trace.append(f"Applied rule {rule.sutra_id} producing {rule.effect_type}")
     return new_state
 
 
@@ -210,7 +195,10 @@ def run_derivation(
                 work_queue.append(new_state)
         elif result.chosen:
             new_state = apply_rule(state, result.chosen)
-            work_queue.append(new_state)
+            if len(new_state.applied_rules) > len(state.applied_rules):
+                work_queue.append(new_state)
+            else:
+                terminal.append(state)
         else:
             terminal.append(state)
 
