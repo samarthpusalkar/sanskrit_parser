@@ -117,13 +117,19 @@ class CompiledSutra:
         op = self.spec.operation
 
         target_phoneme = left[-1] if left else ""
+        right_phoneme = right[0] if right else ""
 
         consume_left = op.left_consume
         consume_right = op.right_consume
 
         emit = op.emit
-        if op.compute_fn and target_phoneme:
-            emit = op.compute_emit(target_phoneme)
+        if op.compute_fn:
+            if op.op_type in ("ekadesha_guna", "ekadesha_vriddhi", "ekadesha_savarna_dirgha", "ekadesha_dirgha"):
+                emit = op.compute_emit(right_phoneme)
+            elif op.compute_fn == "bijection":
+                emit = op.compute_emit(target_phoneme)
+            else:
+                emit = op.compute_emit(target_phoneme)
         elif not emit and op.replacement and op.op_type == "exact_substitute":
             emit = op.replacement
 

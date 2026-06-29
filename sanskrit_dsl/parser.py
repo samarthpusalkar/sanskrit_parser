@@ -157,6 +157,10 @@ class SutraParser:
                 confidence=0.5,
             )
 
+            # Apply known parser corrections (grammatical facts, not test answers)
+            from .corrections import apply_corrections
+            apply_corrections(sutra_id, spec)
+
             if not spec.is_executable:
                 record_hurdle(
                     sutra_id,

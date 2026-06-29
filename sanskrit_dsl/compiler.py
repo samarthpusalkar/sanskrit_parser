@@ -36,9 +36,10 @@ class SutraCompiler:
 
         spec = self.parser.parse_from_db(sutra_id)
 
-        # Apply anuvṛtti inheritance
-        if not spec.is_executable:
-            spec = self.meta_engine.anuvrtti.get_inherited(spec)
+        # Apply anuvṛtti inheritance only for missing operation
+        # (don't inherit contexts — they're sutra-specific)
+        if spec.operation.op_type == "non_operational" and self.meta_engine.anuvrtti.active_operation:
+            spec.operation = self.meta_engine.anuvrtti.active_operation
 
         # Update anuvṛtti tracker with this sūtra's slots
         self.meta_engine.anuvrtti.step(spec)

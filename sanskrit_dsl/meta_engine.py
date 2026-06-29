@@ -178,6 +178,28 @@ class AntarangaResolver:
             if is_inner_to_all:
                 return inner
 
+        # Specificity: more specific target wins
+        # (smaller pratyahara set = more specific; exact_text = most specific)
+        from core.shiva_sutras import PratyaharaResolver
+        def specificity_score(spec: SutraSpec) -> int:
+            score = 0
+            if spec.target_context and spec.target_context.exact_text:
+                alternatives = spec.target_context.exact_text.replace(",", "|").split("|")
+                score += 1000 - len(alternatives) * 100  # exact text is very specific
+            if spec.target_context and spec.target_context.pratyahara:
+                try:
+                    phonemes = PratyaharaResolver.resolve(spec.target_context.pratyahara)
+                    score += 100 - len(phonemes)  # smaller set = higher score
+                except (ValueError, Exception):
+                    pass
+            return score
+
+        scored = [(specificity_score(s), s) for s in candidates]
+        best_score = max(s[0] for s in scored)
+        best_candidates = [s for sc, s in scored if sc == best_score]
+        if len(best_candidates) == 1:
+            return best_candidates[0]
+
         # Fall back to later-sūtra-wins (para)
         return sorted(candidates, key=lambda s: s.sutra_id)[-1]
 
@@ -210,10 +232,9 @@ class MetaRuleEngine:
 
         specs = [c.spec for c in candidates]
 
-        # 1. Antaraṅga/bahiraṅga
+        # 1. Antaraṅga + Specificity + Later wins
         resolved = self.antaranga.resolve(specs)
         if resolved:
-            return next(c for c in candidates if c.spec == resolved)
+            return next(c for c in candidates if c.sutra_id == resolved.sutra_id)
 
-        # 2. Later sūtra wins (para) — already handled by antaranga fallback
         return candidates[-1]
