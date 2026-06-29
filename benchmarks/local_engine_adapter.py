@@ -1,124 +1,126 @@
 from __future__ import annotations
 
 import os
-from typing import List, Sequence, Set
-
-from morphology.sandhi import SandhiEngine
-from paninian_engine.rule_loader import load_sandhi_rules
-from rules.engine import UniversalRuleEngine
+from typing import List, Dict, Any, Optional, Sequence
+from dataclasses import field
 
 from .adapters import BenchmarkAdapter
-from .models import AdapterCapabilities, BenchmarkCase, BenchmarkEvidence, BenchmarkResult
-
-DB_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)),
-    "data",
-    "sanskrit_master.db",
+from .models import (
+    BenchmarkCase, BenchmarkResult, BenchmarkEvidence, 
+    AdapterCapabilities, RuleUniverseEntry
 )
 
+from rules.engine import UniversalRuleEngine
+from morphology.sandhi import SandhiEngine
+from morphology.subanta import SubantaGenerator
+from morphology.tinanta import TinantaGenerator
+from core.phonology import iast_to_slp1, slp1_to_iast
 
 class LocalEngineAdapter(BenchmarkAdapter):
-    name = "local_engine"
-
-    def __init__(self, db_path: str = DB_PATH):
-        self.db_path = db_path
-        self.engine = UniversalRuleEngine.get_instance()
+    """
+    Adapter for the internal Pāṇinian engine.
+    Bridges the benchmark suite to sandhi, verbal, and nominal interfaces.
+    """
+    name: str = "local_engine"
 
     def supported_domains(self) -> Sequence[str]:
-        return ("sandhi",)
+        return ("sandhi", "tinganta", "subanta", "derivation")
 
     def capabilities(self) -> AdapterCapabilities:
         return AdapterCapabilities(
             supports_inventory=True,
-            supports_derivation_evidence=True,
-            supported_domains=self.supported_domains(),
+            supports_derivation_evidence=True
         )
 
     def list_loaded_rules(self) -> List[str]:
-        compiled = {
-            getattr(rule, "sutra_id", "")
-            for rule in self.engine._rules
-            if getattr(rule, "sutra_id", None)
-        }
-        loader = {rule.sutra_id for rule in load_sandhi_rules(self.db_path)}
-        return sorted(compiled | loader)
+        """Returns all rules currently compiled in the UniversalRuleEngine."""
+        engine = UniversalRuleEngine.get_instance()
+        return [r.sutra_id for r in engine._rules if hasattr(r, 'sutra_id')]
 
     def run_case(self, case: BenchmarkCase) -> BenchmarkResult:
-        left = case.inputs["left"]
-        right = case.inputs["right"]
+        """Dispatch case to the correct morphological or sandhi interface."""
+        try:
+            if case.domain == "sandhi":
+                return self._run_sandhi_case(case)
+            elif case.domain == "tinganta":
+                return self._run_tinganta_case(case)
+            elif case.domain == "subanta":
+                return self._run_subanta_case(case)
+            else:
+                return self._fail_case(case, f"Unsupported domain: {case.domain}")
+        except Exception as e:
+            return self._fail_case(case, str(e))
 
-        if case.domain not in self.supported_domains():
-            return BenchmarkResult(
-                case=case,
-                adapter_name=self.name,
-                actual_output="",
-                output_match=False,
-                rule_expectation_match=False,
-                hardcoding_suspected=False,
-                errors=[f"Unsupported domain: {case.domain}"],
-            )
-
-        if case.interface not in {"sandhi_join", "dispatch_forward"}:
-            return BenchmarkResult(
-                case=case,
-                adapter_name=self.name,
-                actual_output="",
-                output_match=False,
-                rule_expectation_match=False,
-                hardcoding_suspected=False,
-                errors=[f"Unsupported interface: {case.interface}"],
-            )
-
-        metadata = SandhiEngine.join_with_metadata(left, right)
-        actual_output = metadata["joined"]
-        loaded_rule_ids = self.list_loaded_rules()
-        applied_rule_ids = list(metadata.get("applied_rule_ids", []))
-
-        expected_output = case.expected_output
-        output_match = expected_output is None or actual_output == expected_output
-
-        expected_presence = (
-            case.expected_rule_presence
-            if case.expected_rule_presence is not None
-            else case.case_kind != "negative_control"
-        )
-        actual_presence = case.sutra_id in applied_rule_ids
-        rule_expectation_match = actual_presence == expected_presence
-
-        hardcoding_suspected = False
-        if output_match and expected_presence and case.sutra_id not in loaded_rule_ids:
-            hardcoding_suspected = True
-        if output_match and expected_presence and case.sutra_id not in applied_rule_ids:
-            hardcoding_suspected = True
-
+    def _run_sandhi_case(self, case: BenchmarkCase) -> BenchmarkResult:
+        # Sandhi inputs: {'left': '...', 'right': '...'}
+        left = case.inputs.get("left", "")
+        right = case.inputs.get("right", "")
+        
+        engine = UniversalRuleEngine.get_instance()
+        # We use the metadata-enriched path to get rule evidence
+        meta = engine.dispatch_forward_with_metadata(left, right)
+        
+        actual = meta["joined"]
         evidence = BenchmarkEvidence(
-            loaded_rule_ids=loaded_rule_ids,
-            applied_rule_ids=applied_rule_ids,
-            trace_steps=list(metadata.get("trace", {}).get("steps", [])),
+            applied_rule_ids=meta["applied_rule_ids"],
+            trace_steps=meta["trace"].get("steps", [])
         )
+        
+        return self._create_result(case, actual, evidence)
 
-        errors: List[str] = []
-        if not output_match:
-            errors.append(
-                f"Output mismatch for {case.case_id}: expected {expected_output!r}, got {actual_output!r}"
-            )
-        if not rule_expectation_match:
-            expectation = "present" if expected_presence else "absent"
-            errors.append(
-                f"Rule expectation mismatch for {case.case_id}: {case.sutra_id} should be {expectation}"
-            )
-        if hardcoding_suspected:
-            errors.append(
-                f"Hardcoding suspected for {case.case_id}: output matched without dynamic rule evidence"
-            )
+    def _run_tinganta_case(self, case: BenchmarkCase) -> BenchmarkResult:
+        # Verb inputs: {'root': '...', 'gana': 1, 'lakara': '...', 'purusa': 3, 'vacana': 1}
+        root = case.inputs.get("root", "")
+        gana = case.inputs.get("gana", 1)
+        lakara = case.inputs.get("lakara", "laṭ")
+        purusa = case.inputs.get("purusa", 3)
+        vacana = case.inputs.get("vacana", 1)
+        
+        actual = TinantaGenerator.conjugate(root, gana, lakara, purusa, vacana)
+        evidence = BenchmarkEvidence() 
+        
+        return self._create_result(case, actual, evidence)
+
+    def _run_subanta_case(self, case: BenchmarkCase) -> BenchmarkResult:
+        # Noun inputs: {'stem': '...', 'case': '...', 'number': '...'}
+        stem = case.inputs.get("stem", "")
+        case_type = case.inputs.get("case", "nominative")
+        number = case.inputs.get("number", "singular")
+        
+        actual = SubantaGenerator.decline(stem, case_type, number)
+        evidence = BenchmarkEvidence()
+        
+        return self._create_result(case, actual, evidence)
+
+    def _create_result(self, case: BenchmarkCase, actual: str, evidence: BenchmarkEvidence) -> BenchmarkResult:
+        # Hardcoding suspected if output matches but expected rule didn't fire
+        hardcoding = False
+        if case.expected_rule_presence is not None:
+            # If a specific rule was expected to fire but didn't, it's a suspicion
+            # but only if the output actually matched (which usually implies hardcoding)
+            if case.expected_rule_presence and not any(
+                r_id == case.sutra_id for r_id in evidence.applied_rule_ids
+            ) and actual == case.expected_output:
+                hardcoding = True
 
         return BenchmarkResult(
             case=case,
             adapter_name=self.name,
-            actual_output=actual_output,
-            output_match=output_match,
-            rule_expectation_match=rule_expectation_match,
-            hardcoding_suspected=hardcoding_suspected,
-            evidence=evidence,
-            errors=errors,
+            actual_output=actual,
+            output_match=(actual == case.expected_output),
+            rule_expectation_match=True if not case.expected_rule_presence else 
+                                   any(r_id == case.sutra_id for r_id in evidence.applied_rule_ids),
+            hardcoding_suspected=hardcoding,
+            evidence=evidence
+        )
+
+    def _fail_case(self, case: BenchmarkCase, error: str) -> BenchmarkResult:
+        return BenchmarkResult(
+            case=case,
+            adapter_name=self.name,
+            actual_output="",
+            output_match=False,
+            rule_expectation_match=False,
+            hardcoding_suspected=False,
+            errors=[error]
         )

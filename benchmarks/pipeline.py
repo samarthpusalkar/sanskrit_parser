@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Iterable, Sequence
 
 from .adapters import BenchmarkAdapter
 from .cases import DEFAULT_CASES_PATH, load_cases
@@ -26,20 +26,26 @@ from .reports import (
 def run_pipeline(
     *,
     adapter: Optional[BenchmarkAdapter] = None,
-    case_path: str = DEFAULT_CASES_PATH,
+    case_paths: Sequence[str] = (DEFAULT_CASES_PATH,), # Support multiple fixture files
     db_path: str = DB_PATH,
     output_dir: Optional[str] = None,
 ) -> Dict[str, object]:
     benchmark_adapter = adapter or LocalEngineAdapter(db_path=db_path)
-    cases = load_cases(case_path)
+    
+    # Load and merge all cases from multiple paths
+    all_cases = []
+    for path in case_paths:
+        all_cases.extend(load_cases(path))
+        
     universe = load_rule_universe(db_path)
 
-    unknown_sutras = find_unknown_case_sutras(universe, (case.sutra_id for case in cases))
+    unknown_sutras = find_unknown_case_sutras(universe, (case.sutra_id for case in all_cases))
     if unknown_sutras:
         raise ValueError(f"Benchmark fixtures reference unknown sutras: {unknown_sutras[:10]}")
 
-    results = benchmark_adapter.batch_run(cases)
+    results = benchmark_adapter.batch_run(all_cases)
     loaded_rule_ids = benchmark_adapter.list_loaded_rules()
+    
     executed_rule_ids = {
         result.case.sutra_id
         for result in results
@@ -51,9 +57,10 @@ def run_pipeline(
     hardcoding_suspect_ids = {
         result.case.sutra_id for result in results if result.hardcoding_suspected
     }
+    
     entries = annotate_rule_universe(
         universe,
-        case_counts=case_counts_by_sutra(case.sutra_id for case in cases),
+        case_counts=case_counts_by_sutra(case.sutra_id for case in all_cases),
         loaded_rule_ids=loaded_rule_ids,
         executed_rule_ids=executed_rule_ids,
         hardcoding_suspect_ids=hardcoding_suspect_ids,

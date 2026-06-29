@@ -1,0 +1,34 @@
+[
+  {
+    "case_id": "MORPH_TIN_001",
+    "sutra_id": "1.1.1",
+    "domain": "tinganta",
+    "interface": "conjugate",
+    "inputs": {
+      "root": "bhū",
+      "gana": 1,
+      "lakara": "laṭ",
+      "purusa": 3,
+      "vacana": 1
+    },
+    "expected_output": "bhavati",
+    "case_kind": "positive",
+    "family_id": "basic_conjugation",
+    "expected_rule_presence": true
+  },
+  {
+    "case_id": "MORPH_SUB_001",
+    "sutra_id": "1.1.1",
+    "domain": "subanta",
+    "interface": "decline",
+    "inputs": {
+      "stem": "rāma",
+      "case": "nominative",
+      "number": "singular"
+    },
+    "expected_output": "rāmaḥ",
+    "case_kind": "positive",
+    "family_id": "basic_declension",
+    "expected_rule_presence": true
+  }
+]

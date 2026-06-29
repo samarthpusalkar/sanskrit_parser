@@ -28,9 +28,9 @@ class RuleUniverseEntry:
 class BenchmarkCase:
     case_id: str
     sutra_id: str
-    domain: str
+    domain: str  # 'sandhi', 'tinganta', 'subanta', 'derivation'
     interface: str
-    inputs: Dict[str, str]
+    inputs: Dict[str, Any] # For sandhi: {'left': '...', 'right': '...'} | For verbs: {'root': '...', 'gana': 1, ...}
     expected_output: Optional[str]
     case_kind: str
     family_id: str
