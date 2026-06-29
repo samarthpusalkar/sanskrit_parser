@@ -48,7 +48,28 @@ class RuleObject:
         Determines if this rule is antaraṅga relative to another.
         The antaraṅga rule is the one whose set of conditioning factors is a proper subset of the other's.
         """
-        return self.conditioning_factors < other.conditioning_factors
+        if self.conditioning_factors and other.conditioning_factors:
+            return self.conditioning_factors < other.conditioning_factors
+        return self.compute_specificity() > other.compute_specificity()
+
+    def compute_specificity(self) -> int:
+        score = 0
+        for ctx in (self.target_context, self.left_context, self.right_context):
+            if not ctx:
+                continue
+            if ctx.get("exact_text"):
+                score += 20
+            if ctx.get("tokens_required"):
+                score += 15
+            if ctx.get("phonetic_class"):
+                score += 5
+            if ctx.get("pratyahara"):
+                score += 2
+        if self.operation.get("replacement"):
+            score += 1
+        if self.effect_type == "prakritibhava":
+            score += 8
+        return score
 
 
 @dataclass
@@ -113,9 +134,15 @@ class ConflictResolver:
         elif len(nitya_rules) > 1:
             candidates = nitya_rules
 
-        # Step 3: Antaraṅga vs Bahiraṅga relational check
-        for r in candidates:
-            if all(r.is_antaranga_relative_to(other) for other in candidates if other != r):
+        # Step 3: Antaraṅga vs Bahiraṅga relational check / specificity-based selection
+        specific_scores = [(r.compute_specificity(), r) for r in candidates]
+        max_score = max(score for score, _ in specific_scores)
+        best_specific = [r for score, r in specific_scores if score == max_score]
+        if len(best_specific) == 1:
+            return ResolutionResult(chosen=best_specific[0])
+
+        for r in best_specific:
+            if all(r.is_antaranga_relative_to(other) for other in best_specific if other != r):
                 return ResolutionResult(chosen=r)
 
         # Step 7: Optionality (Vibhāṣā) - if all candidates are optional variants

@@ -26,6 +26,7 @@ _SYMBOLIC_TO_PHONETIC = {
     "NASAL": "nasal",
     "PAUSE_OR_VOICED": "vowel",
     "STOP": "consonant",
+    "VOICED": "voiced",
 }
 
 # IAST phoneme lists for PratyaharaEngine (from 14 Māheśvara sūtras)
@@ -52,6 +53,7 @@ _EXECUTABLE_OP_TYPES = frozenset({
     "stutva", "tuk_agama", "natva", "samprasarana", "visarga_sandhi",
     "indeclinable_r", "avagraha", "visarga_utva", "ro_ri_dirgha",
     "sascho_ati", "yaro_anunasike", "prakritibhava",
+    "substitute", "exact_substitute", "right_substitute", "bijection_substitute",
 })
 
 _SANDHI_CHAPTER_FILTER = """
@@ -171,7 +173,8 @@ def _map_operation(operation: str, replacement: str, sutra_id: str) -> Dict[str,
 
     if "PRAT:ya" in repl or repl in ("PRAT:yaR", "PRAT:yaN"):
         return {"op_type": "yan"}
-
+    if op == "exact_substitute" and repl in ("r", "ṛ"):
+        return {"op_type": "visarga_sandhi"}
     if op == "bijection_substitute":
         if "yaR" in repl or "yaN" in repl:
             return {"op_type": "yan"}
@@ -282,16 +285,18 @@ def load_sandhi_rules(db_path: str = "data/sanskrit_master.db") -> List[RuleObje
             SELECT sutra_id, name, target_context, left_context, right_context,
                    operation, replacement
             FROM rule_configs
-            WHERE COALESCE(operation, '') NOT IN ('non_operational', 'governance')
-              AND {_SANDHI_CHAPTER_FILTER}
+            WHERE (COALESCE(operation, '') NOT IN ('non_operational', 'governance')
+              AND {_SANDHI_CHAPTER_FILTER})
+              OR COALESCE(operation, '') IN ('prakritibhava', 'external_block')
             ORDER BY sutra_id ASC, id ASC
         """
     else:
         query = f"""
             SELECT sutra_id, name, left_context, NULL, right_context, operation, replacement
             FROM rule_configs
-            WHERE COALESCE(operation, '') != 'non_operational'
-              AND {_SANDHI_CHAPTER_FILTER}
+            WHERE (COALESCE(operation, '') != 'non_operational'
+              AND {_SANDHI_CHAPTER_FILTER})
+              OR COALESCE(operation, '') IN ('prakritibhava', 'external_block')
             ORDER BY sutra_id ASC, id ASC
         """
 

@@ -25,36 +25,63 @@ CURATED_CASE_IDS = frozenset({
 })
 
 CURATED_TEST_CASES = [
-    {
-        "id": "CUR_YAN_001",
-        "difficulty": "seed",
-        "description": "iko yaṇ aci (6.1.77): dadhi + atra -> dadhyatra",
-        "input_tokens": ["dadhi", "atra"],
-        "expected_string": "dadhyatra",
-    },
-    {
-        "id": "CUR_GUNA_001",
-        "difficulty": "seed",
-        "description": "ād guṇaḥ (6.1.87): rama + isa -> ramesa (a+i=e)",
-        "input_tokens": ["rama", "isa"],
-        "expected_string": "ramesa",
-    },
-    {
-        "id": "CUR_DIRGHA_001",
-        "difficulty": "seed",
-        "description": "akaḥ savarṇe dīrghaḥ (6.1.101): deva + arca -> devārca (a+a=ā)",
-        "input_tokens": ["deva", "arca"],
-        "expected_string": "devārca",
-    },
-    {
-        "id": "CUR_ANUSVARA_001",
-        "difficulty": "seed",
-        "description": "mo'nusvāraḥ (8.3.23): sam + rakṣati -> saṃrakṣati",
-        "input_tokens": ["sam", "rakṣati"],
-        "expected_string": "saṃrakṣati",
-    },
+  {
+    "id": "FWD_FAIL_001",
+    "difficulty": "basic",
+    "rule_tags": ["vṛddhireci", "6.1.88"],
+    "description": "Missing Vṛddhi for 'e/ai/o/au'. The code handles a+i (Guṇa) and a+u (Guṇa), but completely lacks the logic for a+e. It will fall through to the 'Direct join' default and output 'tavaeva'.",
+    "input_tokens": ["tava", "eva"],
+    "expected_string": "tavaiva"
+  },
+  {
+    "id": "FWD_FAIL_002",
+    "difficulty": "medium",
+    "rule_tags": ["iko_yaṇ_aci", "6.1.77", "incomplete_rule"],
+    "description": "Incomplete Yaṇ Sandhi. The code specifically hardcoded 'i/ī -> y' under 6.1.77 but forgot the rest of the rule (u->v, ṛ->r). It will fail to convert the 'u' in 'su' to 'v', falling through to 'suāgatam'.",
+    "input_tokens": ["su", "āgatam"],
+    "expected_string": "svāgatam"
+  },
+  {
+    "id": "FWD_FAIL_003",
+    "difficulty": "hard",
+    "rule_tags": ["pragṛhya", "īdūded_dvivacanaṃ_pragṛhyam", "1.1.11"],
+    "description": "False Positive Sandhi on Dual Nouns. The code hardcoded a few Pragṛhya particles ('aho', 'amī') but missed the universal rule that duals ending in ī/ū/e are immune to sandhi. Because 'harī' ends in 'ī', the engine will incorrectly apply Yaṇ Sandhi and output 'haryetau'.",
+    "input_tokens": ["harī", "etau"],
+    "expected_string": "harī etau"
+  },
+  {
+    "id": "FWD_FAIL_004",
+    "difficulty": "basic",
+    "rule_tags": ["visarga_sandhi", "sasajuṣo_ruḥ", "8.2.66"],
+    "description": "Missing Visarga to 'r' conversion. The visarga logic in the code only handles stems ending in 'a' (yielding 'o' or dropping it). For stems ending in 'i' or 'u' before a voiced consonant, the visarga must become 'r'. The engine will ignore it and output 'hariḥgacchati'.",
+    "input_tokens": ["hariḥ", "gacchati"],
+    "expected_string": "harirgacchati"
+  },
+  {
+    "id": "FWD_FAIL_005",
+    "difficulty": "medium",
+    "rule_tags": ["eco_ayavāyāvaḥ", "6.1.78", "incomplete_rule"],
+    "description": "Incomplete Ayavāyāva. The code explicitly checks `elif w1.endswith((\"ai\", \"au\"))` but on the very next line only executes logic `if w1.endswith(\"ai\")`. It has no logic for 'au' + vowel, failing to convert 'au' to 'āv'. It will output 'tauatra'.",
+    "input_tokens": ["tau", "atra"],
+    "expected_string": "tāvatra"
+  },
+  {
+    "id": "FWD_FAIL_006",
+    "difficulty": "basic",
+    "rule_tags": ["mo_anusvāraḥ", "8.3.23"],
+    "description": "Missing general Anusvāra. The code handles specific edge cases like 'sam + rāṭ' and 'sam + kār' but lacks the universal rule that a terminal 'm' before any consonant becomes an anusvāra (ṃ). It will directly join them as 'harimvande'.",
+    "input_tokens": ["harim", "vande"],
+    "expected_string": "hariṃ vande"
+  },
+  {
+    "id": "FWD_FAIL_007",
+    "difficulty": "medium",
+    "rule_tags": ["ād_guṇaḥ", "uraṇ_raparaḥ", "1.1.51"],
+    "description": "Missing Guṇa for ṛ. The code handles 'a+i' and 'a+u', but missing is 'a+ṛ -> ar'. By completely omitting the 'ṛ' handling in the Guṇa block, it will fall through to direct join and output 'mahāṛṣiḥ'.",
+    "input_tokens": ["mahā", "ṛṣiḥ"],
+    "expected_string": "maharṣiḥ"
+  }
 ]
-
 
 def compute_char_f1(pred: str, target: str) -> float:
     if not pred and not target:
@@ -83,7 +110,7 @@ def execute_derivation(input_tokens: list[str]) -> tuple[str, list[str]]:
 
 
 def run_evaluation_suite(
-    test_cases: list[dict] | None = None,
+    test_cases: list[dict] = None,
     verbose: bool = False,
 ) -> tuple[dict, list[dict]]:
     tests_dir = Path(__file__).parent

@@ -78,7 +78,9 @@ def derive_pair(
         else:
             sandhi_rules.append(r)
 
-    mutating = sandhi_rules if sandhi_rules else prakriti_rules
+    # Include blocking prakritibhava rules alongside sandhi rules so conflict resolution
+    # can correctly choose a blocking rule over an otherwise-applicable sandhi rule.
+    mutating = sandhi_rules + prakriti_rules
 
     if not mutating:
         fallback = f"{left} {right}"

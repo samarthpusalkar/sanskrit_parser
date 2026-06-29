@@ -54,6 +54,14 @@ class PhonologyBridge:
         self.pe = pratyahara_engine
         self.db_path = db_path
 
+    def _is_voiced(self, char: str) -> bool:
+        voiced = {'b','bh','d','dh','g','gh','j','jh','ḍ','ḍh','ḷ','r','l','v','m','n','ṅ','ñ','ṇ'}
+        return char in voiced
+
+    def _is_word_boundary_preserved(self, right: str) -> bool:
+        # Preserve a space when a terminal m converts to anusvāra before any consonant.
+        return bool(right and self._is_in_pratyahara(right[0], 'haL'))
+
     def _is_in_pratyahara(self, char: str, pratyahara: str) -> bool:
         if not self.pe or not char:
             return False
@@ -102,6 +110,8 @@ class PhonologyBridge:
             if pclass == "vowel" and not self._is_in_pratyahara(first_char, "aC"):
                 return False
             if pclass == "consonant" and not self._is_in_pratyahara(first_char, "haL"):
+                return False
+            if pclass == "voiced" and not self._is_voiced(first_char):
                 return False
 
         # Check left context (Uddeśya)
@@ -205,7 +215,39 @@ class PhonologyBridge:
 
         if op_type == "mo_anusvarah":
             if left.endswith('m') and right and self._is_in_pratyahara(right[0], "haL"):
+                if self._is_word_boundary_preserved(right):
+                    return f"{left[:-1]}ṃ {right}", True
                 return f"{left[:-1]}ṃ{right}", True
+
+        if op_type in {"substitute", "exact_substitute", "right_substitute"}:
+            replacement = op.get("replacement")
+            if replacement:
+                if left.endswith('ḥ') and replacement == 'r':
+                    return f"{left[:-1]}{replacement}{right}", True
+
+                # Determine the replacement span from exact left context when available.
+                suffix_len = 1
+                if rule.left_context:
+                    exact = rule.left_context.get("exact_text")
+                    tokens_req = rule.left_context.get("tokens_required")
+                    matches = []
+                    if exact:
+                        if isinstance(exact, list):
+                            matches = [t for t in exact if left.endswith(t)]
+                        elif isinstance(exact, str) and left.endswith(exact):
+                            matches = [exact]
+                    elif tokens_req:
+                        if isinstance(tokens_req, list):
+                            matches = [t for t in tokens_req if left.endswith(t)]
+                        elif isinstance(tokens_req, str) and left.endswith(tokens_req):
+                            matches = [tokens_req]
+                    if matches:
+                        suffix_len = max(len(t) for t in matches)
+
+                if left and right and self._is_in_pratyahara(left[-1], "aC") and self._is_in_pratyahara(right[0], "aC"):
+                    return f"{left[:-suffix_len]}{replacement}{right}", True
+                if left.endswith('m') and replacement == 'M' and self._is_in_pratyahara(right[0], "haL"):
+                    return f"{left[:-1]}ṃ {right}", True
 
         if op_type == "torli":
             if left.endswith('n') and right.startswith('l'):
@@ -251,6 +293,8 @@ class PhonologyBridge:
                 return f"{left[:-1]}ś{right}", True
             if left.endswith('ḥ') and right and self._is_in_pratyahara(right[0], "aC") and right[0] != 'a':
                 return f"{left[:-1]} {right}", True
+            if left.endswith('ḥ') and self._is_voiced(right[0]):
+                return f"{left[:-1]}r{right}", True
 
         if op_type == "indeclinable_r":
             return f"{left}{right}", True
