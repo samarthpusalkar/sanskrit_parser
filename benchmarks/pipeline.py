@@ -30,7 +30,7 @@ def run_pipeline(
     db_path: str = DB_PATH,
     output_dir: Optional[str] = None,
 ) -> Dict[str, object]:
-    benchmark_adapter = adapter or LocalEngineAdapter(db_path=db_path)
+    benchmark_adapter = adapter or LocalEngineAdapter()
     
     # Load and merge all cases from multiple paths
     all_cases = []

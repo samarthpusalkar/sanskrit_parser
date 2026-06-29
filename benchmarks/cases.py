@@ -14,6 +14,8 @@ DEFAULT_CASES_PATH = os.path.join(
     "panini_blackbox_cases.json",
 )
 
+VALID_INTERFACES = {"sandhi_join", "dispatch_forward", "conjugate", "decline"}
+
 
 def load_cases(path: str = DEFAULT_CASES_PATH) -> List[BenchmarkCase]:
     with open(path, "r", encoding="utf-8") as handle:
@@ -51,10 +53,12 @@ def load_cases(path: str = DEFAULT_CASES_PATH) -> List[BenchmarkCase]:
 def validate_case(case: BenchmarkCase) -> None:
     if case.case_kind not in {"positive", "negative_control", "perturbation"}:
         raise ValueError(f"Unsupported case_kind for {case.case_id}: {case.case_kind}")
-    if case.interface not in {"sandhi_join", "dispatch_forward"}:
+    if case.interface not in VALID_INTERFACES:
         raise ValueError(f"Unsupported interface for {case.case_id}: {case.interface}")
-    if "left" not in case.inputs or "right" not in case.inputs:
-        raise ValueError(f"{case.case_id} must contain left/right inputs.")
+    # sandhi cases require left/right inputs; morphological cases have their own input shapes
+    if case.interface in {"sandhi_join", "dispatch_forward"}:
+        if "left" not in case.inputs or "right" not in case.inputs:
+            raise ValueError(f"{case.case_id} must contain left/right inputs.")
     if case.expected_rule_presence is None:
         case.expected_rule_presence = case.case_kind != "negative_control"
 
