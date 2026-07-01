@@ -97,8 +97,8 @@
     ]
   },
   {
-    "case_id": "PANINI_6_1_89_POS_001",
-    "sutra_id": "6.1.89",
+    "case_id": "PANINI_6_1_88_POS_001",
+    "sutra_id": "6.1.88",
     "domain": "sandhi",
     "interface": "sandhi_join",
     "inputs": {
@@ -107,17 +107,17 @@
     },
     "expected_output": "tavEva",
     "case_kind": "positive",
-    "family_id": "6.1.89_vrddhi_runtime",
+    "family_id": "6.1.88_vrddhi",
     "expected_rule_presence": true,
     "source": "seed_runtime",
-    "notes": "Runtime currently attributes this vrddhi-style merge to 6.1.89",
+    "notes": "a + e -> ai (vRddhi); correctly attributed to 6.1.88",
     "tags": [
       "vrddhi"
     ]
   },
   {
-    "case_id": "PANINI_6_1_89_PERT_001",
-    "sutra_id": "6.1.89",
+    "case_id": "PANINI_6_1_88_PERT_001",
+    "sutra_id": "6.1.88",
     "domain": "sandhi",
     "interface": "sandhi_join",
     "inputs": {
@@ -126,17 +126,17 @@
     },
     "expected_output": "nEva",
     "case_kind": "perturbation",
-    "family_id": "6.1.89_vrddhi_runtime",
+    "family_id": "6.1.88_vrddhi",
     "expected_rule_presence": true,
     "source": "seed_runtime",
-    "notes": "same family with a different lexical pair",
+    "notes": "same vRddhi family with a different lexical pair",
     "tags": [
       "vrddhi"
     ]
   },
   {
-    "case_id": "PANINI_6_1_89_NEG_001",
-    "sutra_id": "6.1.89",
+    "case_id": "PANINI_6_1_88_NEG_001",
+    "sutra_id": "6.1.88",
     "domain": "sandhi",
     "interface": "sandhi_join",
     "inputs": {
@@ -145,7 +145,7 @@
     },
     "expected_output": "devendra",
     "case_kind": "negative_control",
-    "family_id": "6.1.89_vrddhi_runtime",
+    "family_id": "6.1.88_vrddhi",
     "expected_rule_presence": false,
     "source": "seed_runtime",
     "notes": "guNa case should not be misattributed to vRddhi",
@@ -251,23 +251,22 @@
     ]
   },
   {
-    "case_id": "PANINI_6_1_77_PERT_003",
-    "sutra_id": "6.1.77",
+    "case_id": "PANINI_6_1_101_PERT_002",
+    "sutra_id": "6.1.101",
     "domain": "sandhi",
     "interface": "sandhi_join",
     "inputs": {
       "left": "hotf",
       "right": "fzya"
     },
-    "expected_output": "hotrfzya",
+    "expected_output": "hotFzya",
     "case_kind": "perturbation",
-    "family_id": "6.1.77_yan",
+    "family_id": "6.1.101_dirgha",
     "expected_rule_presence": true,
     "source": "seed_runtime",
-    "notes": "f -> r before a vowel (yan bijection for vocalic r)",
+    "notes": "f + f homogeneous -> F (savarNa dIrgha), not yaN",
     "tags": [
-      "yan",
-      "dynamic"
+      "savarna_dirgha"
     ]
   }
 ]

@@ -46,7 +46,11 @@ EXTRACTION_SCHEMA = {
     "anuvrtti_carries": "object: what this sūtra carries forward via anuvṛtti",
     "commentary_notes": "any commentary context needed",
     "confidence": "number 0-1",
-    "hurdles": "array of strings: obstacles to extraction"
+    "hurdles": "array of strings: obstacles to extraction",
+    "sanjna_required": "array of saṃjñā (technical-label) names the token must carry for this rule to apply (e.g. ['dhatu'], ['sup']). Empty array if none.",
+    "prohibit_if_sanjna": "array of saṃjñā names that block this rule if the token carries any of them. Empty array if none.",
+    "sthani_phoneme": "the original (sthāni) phoneme to match, if the rule conditions on the pre-mutation boundary (SLP1 or null)",
+    "morphological_category": "the morphological category this rule applies to, if any (e.g. 'dhatu', 'sup', 'ting', 'krt', 'avyaya', null otherwise)"
 }
 
 
@@ -67,9 +71,23 @@ def ensure_table(conn: sqlite3.Connection):
             confidence REAL,
             hurdles TEXT,
             extracted_at TEXT,
-            model TEXT
+            model TEXT,
+            sanjna_required TEXT DEFAULT '[]',
+            prohibit_if_sanjna TEXT DEFAULT '[]',
+            sthani_phoneme TEXT,
+            morphological_category TEXT
         )
     """)
+    # Migration: add the new saṃjñā columns if they don't exist.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(llm_extracted_metadata)").fetchall()}
+    for col, decl in [
+        ("sanjna_required", "TEXT DEFAULT '[]'"),
+        ("prohibit_if_sanjna", "TEXT DEFAULT '[]'"),
+        ("sthani_phoneme", "TEXT"),
+        ("morphological_category", "TEXT"),
+    ]:
+        if col not in cols:
+            conn.execute(f"ALTER TABLE llm_extracted_metadata ADD COLUMN {col} {decl}")
     conn.commit()
 
 
@@ -212,6 +230,36 @@ Expected JSON schema:
 Return ONLY valid JSON, no explanation."""
 
 
+def build_batch_prompt(sutras: List[Dict], commentary_map: Dict[str, str]) -> str:
+    """Build a batch prompt for definitional (saṃjñā/paribhāṣā) sūtras of a pāda.
+
+    Requests a JSON ARRAY of extraction objects, one per sūtra, in order.
+    The full pāda scope is visible so the LLM understands adhikāra/anuvṛtti natively.
+    """
+    lines = ["You are a Pāṇinian grammar expert. Extract structured metadata for EACH of the following sūtras in order.\n"]
+    lines.append("These are definitional sūtras (saṃjñā definitions or paribhāṣā meta-rules) of a single pāda. The adhikāra and anuvṛtti scope spans the whole list — use the full context.\n")
+    for i, s in enumerate(sutras, 1):
+        lines.append(f"\n--- Sūtra {i}: {s['id']} ---")
+        lines.append(f"Text (Devanagari): {s['sutra_dev']}")
+        lines.append(f"Pada Cheda: {s['pada_cheda']}")
+        lines.append(f"Sūtra Type: {s['sutra_type']}")
+        if s.get("samasta_sutra"):
+            lines.append(f"Expanded (samasta): {s['samasta_sutra']}")
+        if s.get("anuvrtti"):
+            lines.append(f"Anuvṛtti carried: {s['anuvrtti']}")
+        if s.get("adhikara"):
+            lines.append(f"Adhikāra: {s['adhikara']}")
+        comm = commentary_map.get(s["id"], "")
+        if comm:
+            lines.append(f"Commentary (Vasu): {comm}")
+    lines.append("\n\nReturn a JSON ARRAY with one object per sūtra above, in the SAME ORDER.")
+    lines.append("Each object must follow this schema:")
+    lines.append(json.dumps(EXTRACTION_SCHEMA, indent=2))
+    lines.append("\nAll phonemes in SLP1. If you cannot determine a field, use null.")
+    lines.append("\nReturn ONLY the JSON array, no explanation.")
+    return "\n".join(lines)
+
+
 def call_ollama(prompt: str, model: str = "deepseek-v4-pro:cloud",
                 max_retries: int = 5) -> Optional[Dict]:
     """Call Ollama HTTP API to extract metadata. Retries on 429 with backoff."""
@@ -257,13 +305,64 @@ def call_ollama(prompt: str, model: str = "deepseek-v4-pro:cloud",
     return {"error": "Ollama API exhausted retries"}
 
 
+def call_ollama_array(prompt: str, model: str = "deepseek-v4-pro:cloud",
+                      max_retries: int = 5) -> Optional[List[Dict]]:
+    """Call Ollama and parse a JSON ARRAY response. Retries on 429."""
+    for attempt in range(max_retries):
+        try:
+            payload = json.dumps({
+                "model": model, "prompt": prompt,
+                "stream": False, "format": "json"
+            }).encode("utf-8")
+            req = urllib.request.Request(OLLAMA_URL, data=payload,
+                                         headers={"Content-Type": "application/json"},
+                                         method="POST")
+            with urllib.request.urlopen(req, timeout=180) as response:
+                result = json.loads(response.read().decode("utf-8"))
+                response_text = result.get("response", "")
+            start = response_text.find("[")
+            end = response_text.rfind("]") + 1
+            if start == -1 or end == 0:
+                return [{"error": "No JSON array found in response"}]
+            arr = json.loads(response_text[start:end])
+            if not isinstance(arr, list):
+                return [{"error": "Response was not a JSON array"}]
+            return arr
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < max_retries - 1:
+                time.sleep(min(2 ** (attempt + 2), 60))
+                continue
+            return [{"error": f"HTTP {e.code}: {e.reason}"}]
+        except urllib.error.URLError as e:
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            return [{"error": f"URLError: {e}"}]
+        except Exception as e:
+            return [{"error": str(e)}]
+    return [{"error": "exhausted retries"}]
+
+
+def store_batch_extraction(conn: sqlite3.Connection, sutra_id: str,
+                            extraction: Dict, model: str):
+    """Store one element of a batch extraction (same schema as store_extraction)."""
+    store_extraction(conn, sutra_id, extraction, model)
+
+
+def _is_definitional(sutra: Dict) -> bool:
+    """A definitional sūtra: saṃjñā (S$) or paribhāṣā (P$)."""
+    st = sutra.get("sutra_type", "") or ""
+    return st.startswith("S$") or st.startswith("P$")
+
+
 def store_extraction(conn: sqlite3.Connection, sutra_id: str, extraction: Dict, model: str):
     conn.execute("""
         INSERT OR REPLACE INTO llm_extracted_metadata
         (sutra_id, operation_type, target, left_context, right_context, replacement,
          conditioning_factors, applicable_paribhasas, domain, anuvrtti_carries,
-         commentary_notes, confidence, hurdles, extracted_at, model)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         commentary_notes, confidence, hurdles, extracted_at, model,
+         sanjna_required, prohibit_if_sanjna, sthani_phoneme, morphological_category)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         sutra_id,
         extraction.get("operation_type"),
@@ -279,14 +378,18 @@ def store_extraction(conn: sqlite3.Connection, sutra_id: str, extraction: Dict, 
         extraction.get("confidence", 0),
         json.dumps(extraction.get("hurdles", [])),
         time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        model
+        model,
+        json.dumps(extraction.get("sanjna_required", [])),
+        json.dumps(extraction.get("prohibit_if_sanjna", [])),
+        extraction.get("sthani_phoneme"),
+        extraction.get("morphological_category"),
     ))
     conn.commit()
 
 
 def extract_chapter(chapter: str, force: bool = False, dry_run: bool = False,
                     model: str = "deepseek-v4-pro:cloud", delay: float = 2.0,
-                    max_sutras: int = 0):
+                    max_sutras: int = 0, batch_definitions: bool = False):
     conn = sqlite3.connect(DB_PATH)
     ensure_table(conn)
 
@@ -296,6 +399,101 @@ def extract_chapter(chapter: str, force: bool = False, dry_run: bool = False,
     extracted = 0
     cached = 0
     failed = 0
+
+    if batch_definitions:
+        # Partition into definitional (S$/P$) and operational (V$/others).
+        definitional = [s for s in sutras if _is_definitional(s)]
+        operational = [s for s in sutras if not _is_definitional(s)]
+        print(f"  batch-definitions: {len(definitional)} definitional, {len(operational)} operational")
+
+        # Phase A: batch-extract definitional sūtras not yet cached.
+        to_batch = [s for s in definitional if force or not is_cached(conn, s["id"])]
+        if to_batch:
+            commentary_map = {s["id"]: load_commentary(s["id"]) for s in to_batch}
+            prompt = build_batch_prompt(to_batch, commentary_map)
+            if dry_run:
+                print(f"\n--- BATCH PROMPT ({len(to_batch)} sūtras) ---")
+                print(prompt[:1500])
+                print("...")
+            else:
+                print(f"  Batch-extracting {len(to_batch)} definitional sūtras...", end=" ")
+                sys.stdout.flush()
+                arr = call_ollama_array(prompt, model)
+                if arr is None or (arr and "error" in arr[0]):
+                    err = arr[0].get("error", "unknown") if arr else "no response"
+                    print(f"FAIL ({err})")
+                    # Fall back to per-sūtra for all batch sutras.
+                    for s in to_batch:
+                        sid = s["id"]
+                        prev = get_previous_sutras(conn, sid, count=5)
+                        p = build_prompt(s, prev, load_commentary(sid))
+                        r = call_ollama(p, model)
+                        if r and "error" not in r:
+                            store_extraction(conn, sid, r, model)
+                            extracted += 1
+                            print(f"\n    {sid} OK (fallback op={r.get('operation_type')})")
+                        else:
+                            failed += 1
+                else:
+                    # Store batch results, aligning by order.
+                    stored = 0
+                    for i, s in enumerate(to_batch):
+                        ext = arr[i] if i < len(arr) else None
+                        if ext is None or "error" in ext:
+                            # Fallback per-sūtra for this one.
+                            sid = s["id"]
+                            prev = get_previous_sutras(conn, sid, count=5)
+                            p = build_prompt(s, prev, load_commentary(sid))
+                            r = call_ollama(p, model)
+                            if r and "error" not in r:
+                                store_extraction(conn, sid, r, model)
+                                extracted += 1
+                            else:
+                                failed += 1
+                        else:
+                            store_batch_extraction(conn, s["id"], ext, model)
+                            extracted += 1
+                            stored += 1
+                    print(f"OK ({stored} stored, {len(to_batch) - stored} fallback)")
+                if delay > 0:
+                    time.sleep(delay)
+        else:
+            print("  All definitional sūtras already cached.")
+
+        # Phase B: per-sūtra for operational sūtras.
+        for sutra in operational:
+            sid = sutra["id"]
+            if not force and is_cached(conn, sid):
+                cached += 1
+                continue
+            if not sutra["sutra_dev"] and not sutra["pada_cheda"]:
+                record_hurdle(sid, "missing_data", "Sūtra has no text or pada_cheda", blocking=True)
+                failed += 1
+                continue
+            if max_sutras and extracted + failed >= max_sutras:
+                break
+            prev = get_previous_sutras(conn, sid, count=5)
+            prompt = build_prompt(sutra, prev, load_commentary(sid))
+            if dry_run:
+                continue
+            print(f"  Extracting {sid}...", end=" ")
+            sys.stdout.flush()
+            result = call_ollama(prompt, model)
+            if result is None or "error" in result:
+                err = result.get("error", "unknown") if result else "no response"
+                print(f"FAIL ({err})")
+                record_hurdle(sid, "llm_extraction_failed", f"LLM returned: {err}", blocking=False)
+                failed += 1
+                continue
+            store_extraction(conn, sid, result, model)
+            print(f"OK (op={result.get('operation_type')})")
+            extracted += 1
+            if delay > 0:
+                time.sleep(delay)
+
+        conn.close()
+        print(f"\nDone: {extracted} extracted, {cached} cached, {failed} failed")
+        return
 
     for sutra in sutras:
         sid = sutra["id"]
@@ -355,10 +553,13 @@ def main():
     parser.add_argument("--model", default="deepseek-v4-pro:cloud", help="Ollama model to use")
     parser.add_argument("--delay", type=float, default=2.0, help="Seconds to wait between LLM calls (rate-limit safety)")
     parser.add_argument("--max", type=int, default=0, help="Stop after N new (non-cached) sūtras (0 = no limit)")
+    parser.add_argument("--batch-definitions", action="store_true",
+                        help="Batch-extract definitional (S$/P$) sūtras per pāda; per-sūtra for operational (V$)")
     args = parser.parse_args()
 
     extract_chapter(args.chapter, force=args.force, dry_run=args.dry_run,
-                    model=args.model, delay=args.delay, max_sutras=args.max)
+                    model=args.model, delay=args.delay, max_sutras=args.max,
+                    batch_definitions=args.batch_definitions)
 
 
 if __name__ == "__main__":

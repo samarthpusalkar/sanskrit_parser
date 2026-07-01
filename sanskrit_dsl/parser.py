@@ -66,7 +66,11 @@ class SutraParser:
         llm_row = None
         try:
             llm_row = conn.execute(
-                "SELECT * FROM llm_extracted_metadata WHERE sutra_id = ?",
+                "SELECT sutra_id, operation_type, target, left_context, right_context, "
+                "replacement, conditioning_factors, applicable_paribhasas, domain, "
+                "anuvrtti_carries, commentary_notes, confidence, hurdles, extracted_at, model, "
+                "sanjna_required, prohibit_if_sanjna, sthani_phoneme, morphological_category "
+                "FROM llm_extracted_metadata WHERE sutra_id = ?",
                 (sutra_id,)
             ).fetchone()
         except sqlite3.OperationalError:
@@ -97,7 +101,9 @@ class SutraParser:
         (
             _sid, op_type, target, left_ctx, right_ctx, replacement,
             cond_factors_json, paribhasas_json, domain, anuvrtti_json,
-            commentary, confidence, hurdles_json, _extracted_at, _model
+            commentary, confidence, hurdles_json, _extracted_at, _model,
+            sanjna_required_json, prohibit_if_sanjna_json, sthani_phoneme,
+            morphological_category
         ) = row
 
         op = SutraOperation(
@@ -129,8 +135,17 @@ class SutraParser:
         left_context = self._ctx_from_llm_term(left_ctx, "end")
         right_context = self._ctx_from_llm_term(right_ctx, "start")
 
-        if target and len(target) <= 3 and target[0].isupper() is False:
-            pass
+        sanjna_required = _as_set(_safe_loads(sanjna_required_json, []))
+        prohibit_if_sanjna = _as_set(_safe_loads(prohibit_if_sanjna_json, []))
+        has_sanjna_meta = bool(sanjna_required or prohibit_if_sanjna
+                               or sthani_phoneme or morphological_category)
+        if target_ctx is None and has_sanjna_meta:
+            target_ctx = SutraContext(match_pos="end")
+        if target_ctx is not None:
+            target_ctx.sanjna_required = sanjna_required
+            target_ctx.prohibit_if_sanjna = prohibit_if_sanjna
+            target_ctx.sthani_phoneme = sthani_phoneme or None
+            target_ctx.morphological_category = morphological_category or None
 
         return SutraSpec(
             sutra_id=sutra_id,

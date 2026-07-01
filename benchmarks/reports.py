@@ -23,6 +23,7 @@ def build_coverage_summary(
         benchmarked_sutras=sum(1 for entry in entries.values() if entry.case_count > 0),
         dynamically_executed_sutras=sum(1 for entry in entries.values() if entry.executed_dynamically),
         hardcoding_suspicions=hardcoding_case_count,
+        meta_rule_unverified_sutras=sum(1 for entry in entries.values() if entry.meta_rule_unverified),
         counts_by_classification=counts_by_classification,
     )
 
@@ -43,6 +44,7 @@ def benchmark_results_payload(results: Iterable[BenchmarkResult]) -> List[dict]:
                 "rule_expectation_match": result.rule_expectation_match,
                 "hardcoding_suspected": result.hardcoding_suspected,
                 "applied_rule_ids": result.evidence.applied_rule_ids,
+                "trace_steps": result.evidence.trace_steps,
                 "errors": result.errors,
             }
         )
@@ -59,6 +61,7 @@ def universe_payload(entries: Mapping[str, RuleUniverseEntry]) -> Dict[str, dict
             "executed_dynamically": entry.executed_dynamically,
             "adapter_supported": entry.adapter_supported,
             "hardcoding_suspected": entry.hardcoding_suspected,
+            "meta_rule_unverified": entry.meta_rule_unverified,
             "classification": entry.classification,
         }
         for sutra_id, entry in entries.items()
@@ -79,6 +82,8 @@ def build_summary_markdown(summary: CoverageSummary, results: Iterable[Benchmark
         f"- Runtime-loaded sutras: {summary.runtime_loaded_sutras}",
         f"- Benchmarked sutras: {summary.benchmarked_sutras}",
         f"- Dynamically executed sutras: {summary.dynamically_executed_sutras}",
+        f"- Trace-verified sutras: {summary.dynamically_executed_sutras - summary.meta_rule_unverified_sutras}",
+        f"- Meta-rule unverified sutras: {summary.meta_rule_unverified_sutras}",
         f"- Hardcoding suspicions: {summary.hardcoding_suspicions}",
         "",
         "## Classification Counts",

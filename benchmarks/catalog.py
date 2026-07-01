@@ -45,11 +45,13 @@ def annotate_rule_universe(
     loaded_rule_ids: Iterable[str],
     executed_rule_ids: Iterable[str],
     hardcoding_suspect_ids: Iterable[str],
+    trace_verified_ids: Iterable[str] = (),
 ) -> Dict[str, RuleUniverseEntry]:
     """Return a classified copy of the canonical rule universe."""
     loaded = set(loaded_rule_ids)
     executed = set(executed_rule_ids)
     hardcoding = set(hardcoding_suspect_ids)
+    trace_verified = set(trace_verified_ids)
 
     annotated: Dict[str, RuleUniverseEntry] = {}
     for sutra_id, entry in universe.items():
@@ -62,6 +64,7 @@ def annotate_rule_universe(
             executed_dynamically=sutra_id in executed,
             adapter_supported=case_counts.get(sutra_id, 0) > 0,
             hardcoding_suspected=sutra_id in hardcoding,
+            meta_rule_unverified=sutra_id in executed and sutra_id not in trace_verified,
         )
 
         if not item.has_rule_config:
@@ -73,13 +76,45 @@ def annotate_rule_universe(
         elif not item.loaded_by_runtime:
             item.classification = "runtime_unloaded"
         elif item.executed_dynamically:
-            item.classification = "executed"
+            if item.meta_rule_unverified:
+                item.classification = "executed_meta_unverified"
+            else:
+                item.classification = "executed"
         else:
             item.classification = "execution_unmapped"
 
         annotated[sutra_id] = item
 
     return annotated
+
+
+def derive_trace_verified_ids(
+    results: Iterable["BenchmarkResult"],
+    expected_traces: Optional[Mapping[str, Sequence[str]]] = None,
+) -> Set[str]:
+    """
+    Return the set of sutra IDs whose trace was explicitly verified.
+
+    A result is trace-verified when its applied_rule_ids contain the expected
+    sutra_id AND the trace_steps are non-empty (derivation evidence exists).
+    If expected_traces is provided, each case_id must match the ordered rule
+    sequence declared in the fixture.
+    """
+    verified: Set[str] = set()
+    expected = expected_traces or {}
+    for result in results:
+        if not result.output_match or result.hardcoding_suspected or result.errors:
+            continue
+        case_id = result.case.case_id
+        applied = result.evidence.applied_rule_ids
+        trace = result.evidence.trace_steps
+        if result.case.sutra_id in applied and trace:
+            if case_id in expected:
+                if [step.get("sutra_id") for step in trace] == list(expected[case_id]):
+                    verified.add(result.case.sutra_id)
+            else:
+                verified.add(result.case.sutra_id)
+    return verified
 
 
 def case_counts_by_sutra(sutra_ids: Iterable[str]) -> Dict[str, int]:

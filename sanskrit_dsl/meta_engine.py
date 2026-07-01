@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .types import SutraSpec, CompiledSutra
 
@@ -118,7 +118,6 @@ class AnuvrttiTracker:
 
     def step(self, spec: SutraSpec):
         """Update carried-over slots after processing a sūtra."""
-        # Domain change resets all slots
         if spec.domain != self.active_domain:
             self.active_target = None
             self.active_left_context = None
@@ -127,20 +126,23 @@ class AnuvrttiTracker:
             self.active_domain = spec.domain
             return
 
-        # Fill slots from this sūtra
         if spec.target_context:
             self.active_target = spec.target_context
         if spec.left_context:
             self.active_left_context = spec.left_context
+        if spec.right_context:
+            self.active_right_context = spec.right_context
         if spec.operation and spec.operation.op_type not in ("non_operational", "governance"):
             self.active_operation = spec.operation
 
     def get_inherited(self, spec: SutraSpec) -> SutraSpec:
-        """Fill in missing slots from anuvṛtti."""
+        """Fill in missing slots from anuvṛtti (including right_context)."""
         if not spec.target_context and self.active_target:
             spec.target_context = self.active_target
         if not spec.left_context and self.active_left_context:
             spec.left_context = self.active_left_context
+        if not spec.right_context and self.active_right_context:
+            spec.right_context = self.active_right_context
         if spec.operation.op_type == "non_operational" and self.active_operation:
             spec.operation = self.active_operation
         return spec
@@ -148,25 +150,27 @@ class AnuvrttiTracker:
 
 class AntarangaResolver:
     """
-    Resolves antaraṅga/bahiraṅga conflicts using conditioning_factors.
-    A rule whose conditioning_factors are a proper subset of another's
-    is antaraṅga (inner) and takes precedence.
+    Resolves antaraṅga/bahiraṅga conflicts and specificity-based precedence.
     """
 
     @staticmethod
     def is_antaranga(inner: SutraSpec, outer: SutraSpec) -> bool:
-        """Check if `inner` is antaraṅga relative to `outer`."""
+        """Check if `inner` is antaraṅga relative to `outer` (conditioning subset)."""
         if not inner.conditioning_factors or not outer.conditioning_factors:
             return False
         return inner.conditioning_factors < outer.conditioning_factors
 
     @staticmethod
-    def resolve(candidates: List[SutraSpec]) -> Optional[SutraSpec]:
-        """Resolve a conflict between multiple matching rules."""
+    def resolve(candidates: List[SutraSpec], left: str = "", right: str = "") -> Optional[SutraSpec]:
+        """Resolve a conflict between multiple matching rules.
+
+        Cascade: antaraṅga (subset) → weighted specificity (with parasavaraṇa
+        priority) → later-sūtra-wins (numeric tuple ordering, not lexicographic).
+        """
         if len(candidates) == 1:
             return candidates[0]
 
-        # Check antaraṅga relationships
+        # 1. Antaraṅga relationships.
         for i, inner in enumerate(candidates):
             is_inner_to_all = True
             for j, outer in enumerate(candidates):
@@ -178,26 +182,46 @@ class AntarangaResolver:
             if is_inner_to_all:
                 return inner
 
-        # Specificity: more specific target wins
-        # (smaller pratyahara set = more specific; exact_text = most specific;
-        #  more contexts = more specific)
+        # 2. Weighted specificity with parasavaraṇa priority.
         from core.shiva_sutras import PratyaharaResolver
+        from .types import _is_savarna, _META_TERM_WILDCARDS
+
+        def context_type_score(ctx):
+            if not ctx:
+                return 0
+            if ctx.sanjna_required:
+                return 120
+            if ctx.sthani_phoneme:
+                return 60
+            if ctx.exact_text:
+                alts = [a for a in ctx.exact_text.replace(",", "|").split("|") if a]
+                if all(a in _META_TERM_WILDCARDS for a in alts):
+                    return 90
+                return 80
+            if ctx.pratyahara:
+                return 40
+            return 0
+
         def specificity_score(spec: SutraSpec) -> int:
             score = 0
             if spec.target_context and spec.target_context.exact_text:
-                alternatives = spec.target_context.exact_text.replace(",", "|").split("|")
-                score += 1000 - len(alternatives) * 100
+                alts = [a for a in spec.target_context.exact_text.replace(",", "|").split("|") if a]
+                score += 1000 - len(alts) * 100
             if spec.target_context and spec.target_context.pratyahara:
                 try:
                     phonemes = PratyaharaResolver.resolve(spec.target_context.pratyahara)
                     score += 100 - len(phonemes)
                 except (ValueError, Exception):
                     pass
-            # More contexts = more specific
-            if spec.right_context:
-                score += 50
-            if spec.left_context:
-                score += 50
+            score += context_type_score(spec.right_context)
+            score += context_type_score(spec.left_context)
+            # Parasavaraṇa priority: a rule requiring savarṇa gets +150 when the
+            # pair is actually homogeneous, so it outscores a non-savarṇa rule.
+            if spec.right_context and spec.right_context.exact_text:
+                alts = [a for a in spec.right_context.exact_text.replace(",", "|").split("|") if a]
+                if all(a in _META_TERM_WILDCARDS for a in alts) and left and right:
+                    if _is_savarna(left[-1], right[0]):
+                        score += 150
             return score
 
         scored = [(specificity_score(s), s) for s in candidates]
@@ -206,8 +230,20 @@ class AntarangaResolver:
         if len(best_candidates) == 1:
             return best_candidates[0]
 
-        # Fall back to later-sūtra-wins (para)
-        return sorted(candidates, key=lambda s: s.sutra_id)[-1]
+        # 3. Later-sūtra-wins (para) with NUMERIC tuple ordering.
+        return sorted(best_candidates, key=lambda s: _sutra_sort_key(s.sutra_id))[-1]
+
+
+def _sutra_sort_key(sutra_id: str):
+    """Numeric (adhyaya, pada, sutra_no) tuple for correct ordering.
+
+    Fixes the lexicographic bug where '6.1.9' sorted after '6.1.77'.
+    """
+    parts = sutra_id.split(".")
+    try:
+        return (int(parts[0]), int(parts[1]), int(parts[2])) if len(parts) == 3 else (0, 0, 0)
+    except (ValueError, IndexError):
+        return (0, 0, 0)
 
 
 class MetaRuleEngine:
@@ -229,18 +265,71 @@ class MetaRuleEngine:
             self.paribhasas.load()
             self._loaded = True
 
-    def resolve_conflict(self, candidates: List[CompiledSutra], left: str, right: str) -> Optional[CompiledSutra]:
-        """Resolve a conflict between multiple matching rules."""
+    def resolve_conflict(self, candidates: List[CompiledSutra], left: str, right: str,
+                         context: Any = None) -> Optional[CompiledSutra]:
+        """Resolve a conflict between multiple matching rules.
+
+        Cascade: apavāda (niyama debar) → antaraṅga/specificity/para.
+        """
         if not candidates:
             return None
         if len(candidates) == 1:
             return candidates[0]
 
-        specs = [c.spec for c in candidates]
+        # Apavāda / niyama: a niyama (prohibition) rule debars a matching vidhi.
+        niyama_ids = {c.sutra_id for c in candidates if c.spec.rule_type == "niyama"}
+        if niyama_ids:
+            debarrable = set()
+            for n in candidates:
+                if n.spec.rule_type != "niyama":
+                    continue
+                for v in candidates:
+                    if v.spec.rule_type == "vidhi" and v.sutra_id != n.sutra_id:
+                        if self._scope_subsumes(n.spec, v.spec):
+                            debarrable.add(v.sutra_id)
+            if debarrable:
+                candidates = [c for c in candidates if c.sutra_id not in debarrable]
+                if len(candidates) == 1:
+                    return candidates[0]
+                if not candidates:
+                    return None
 
-        # 1. Antaraṅga + Specificity + Later wins
-        resolved = self.antaranga.resolve(specs)
+        # Parasavaraṇa debar: on a homogeneous pair, a rule requiring savarṇa
+        # debars a rule that does not (e.g. 6.1.101 dirgha debars 6.1.87 guṇa
+        # on a+a). This is an asiddhatva-style precedence, not just a score bump.
+        from .types import _is_savarna, _META_TERM_WILDCARDS
+        if left and right and _is_savarna(left[-1], right[0]):
+            savarna_rules = []
+            non_savarna_rules = []
+            for c in candidates:
+                rc = c.spec.right_context
+                is_sav = (rc and rc.exact_text and
+                          all(a in _META_TERM_WILDCARDS for a in
+                              rc.exact_text.replace(",", "|").split("|") if a))
+                (savarna_rules if is_sav else non_savarna_rules).append(c)
+            if savarna_rules and non_savarna_rules:
+                debarrable = {c.sutra_id for c in non_savarna_rules}
+                candidates = [c for c in candidates if c.sutra_id not in debarrable]
+                if len(candidates) == 1:
+                    return candidates[0]
+                if not candidates:
+                    return None
+
+        specs = [c.spec for c in candidates]
+        resolved = self.antaranga.resolve(specs, left, right)
         if resolved:
             return next(c for c in candidates if c.sutra_id == resolved.sutra_id)
+        return sorted(candidates, key=lambda c: _sutra_sort_key(c.sutra_id))[-1]
 
-        return candidates[-1]
+    @staticmethod
+    def _scope_subsumes(niyama: SutraSpec, vidhi: SutraSpec) -> bool:
+        """Does the niyama's condition scope subsume the vidhi's?"""
+        if niyama.target_context and vidhi.target_context:
+            if niyama.target_context.pratyahara == vidhi.target_context.pratyahara:
+                return True
+            if niyama.target_context.exact_text and vidhi.target_context.exact_text:
+                n_alts = set(niyama.target_context.exact_text.replace(",", "|").split("|"))
+                v_alts = set(vidhi.target_context.exact_text.replace(",", "|").split("|"))
+                if v_alts <= n_alts:
+                    return True
+        return True if not niyama.target_context else False

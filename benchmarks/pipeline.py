@@ -10,6 +10,7 @@ from .catalog import (
     DB_PATH,
     annotate_rule_universe,
     case_counts_by_sutra,
+    derive_trace_verified_ids,
     find_unknown_case_sutras,
     load_rule_universe,
 )
@@ -57,13 +58,21 @@ def run_pipeline(
     hardcoding_suspect_ids = {
         result.case.sutra_id for result in results if result.hardcoding_suspected
     }
-    
+
+    expected_traces = {
+        case.case_id: case.expected_trace
+        for case in all_cases
+        if case.expected_trace
+    }
+    trace_verified_ids = derive_trace_verified_ids(results, expected_traces)
+
     entries = annotate_rule_universe(
         universe,
         case_counts=case_counts_by_sutra(case.sutra_id for case in all_cases),
         loaded_rule_ids=loaded_rule_ids,
         executed_rule_ids=executed_rule_ids,
         hardcoding_suspect_ids=hardcoding_suspect_ids,
+        trace_verified_ids=trace_verified_ids,
     )
 
     summary = build_coverage_summary(
@@ -82,6 +91,8 @@ def run_pipeline(
             "benchmarked_sutras": summary.benchmarked_sutras,
             "dynamically_executed_sutras": summary.dynamically_executed_sutras,
             "hardcoding_suspicions": summary.hardcoding_suspicions,
+            "meta_rule_unverified_sutras": summary.meta_rule_unverified_sutras,
+            "trace_verified_sutras": len(trace_verified_ids),
             "counts_by_classification": summary.counts_by_classification,
         },
         "results": benchmark_results_payload(results),

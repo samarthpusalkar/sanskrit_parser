@@ -21,6 +21,7 @@ class RuleUniverseEntry:
     executed_dynamically: bool = False
     adapter_supported: bool = False
     hardcoding_suspected: bool = False
+    meta_rule_unverified: bool = False
     classification: str = "adapter_pending"
 
 
@@ -35,6 +36,7 @@ class BenchmarkCase:
     case_kind: str
     family_id: str
     expected_rule_presence: Optional[bool] = None
+    expected_trace: List[str] = field(default_factory=list)
     notes: str = ""
     source: str = ""
     tags: List[str] = field(default_factory=list)
@@ -77,4 +79,5 @@ class CoverageSummary:
     benchmarked_sutras: int
     dynamically_executed_sutras: int
     hardcoding_suspicions: int
+    meta_rule_unverified_sutras: int
     counts_by_classification: Dict[str, int]

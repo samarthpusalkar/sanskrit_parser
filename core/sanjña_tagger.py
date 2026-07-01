@@ -102,6 +102,90 @@ def _is_amredita(tok: str, morph: Dict[str, Any]) -> bool:
     return morph.get("is_amredita", False)
 
 
+# --- Derivational / affix saṃjñās (needed for 3.x–7.x rule conditions) ---
+# These predicates read morphological_features from the ExecutionContext.
+# When the morphology layer is unwired, they degrade gracefully (return False).
+
+def _is_dhatu(tok: str, morph: Dict[str, Any]) -> bool:
+    """A verbal root (dhātu). Read from morph['category'] == 'dhatu'."""
+    return morph.get("category") == "dhatu" or morph.get("is_dhatu", False)
+
+
+def _is_sup(tok: str, morph: Dict[str, Any]) -> bool:
+    """A nominal case affix (sup)."""
+    return morph.get("category") == "sup" or morph.get("is_sup", False)
+
+
+def _is_ting(tok: str, morph: Dict[str, Any]) -> bool:
+    """A verbal tense/mood affix (tiṅ)."""
+    return morph.get("category") == "ting" or morph.get("is_ting", False)
+
+
+def _is_krt(tok: str, morph: Dict[str, Any]) -> bool:
+    """A kṛt affix (forms nominal derivatives from roots)."""
+    return morph.get("category") == "krt" or morph.get("is_krt", False)
+
+
+def _is_ardhadhatuka(tok: str, morph: Dict[str, Any]) -> bool:
+    """An ārdhadhātuka affix (a class of verbal endings)."""
+    return morph.get("affix_class") == "ardhadhatuka" or morph.get("is_ardhadhatuka", False)
+
+
+def _is_sarvadhatuka(tok: str, morph: Dict[str, Any]) -> bool:
+    """A sārvadhātuka affix (the other class of verbal endings)."""
+    return morph.get("affix_class") == "sarvadhatuka" or morph.get("is_sarvadhatuka", False)
+
+
+def _is_gati(tok: str, morph: Dict[str, Any]) -> bool:
+    """A gati (preverb/preposition) — upasarga."""
+    return morph.get("category") == "gati" or morph.get("is_gati", False)
+
+
+def _is_sarvanamasthana(tok: str, morph: Dict[str, Any]) -> bool:
+    """A sarvanāmasthāna (pronoun stem, triggers special endings)."""
+    return morph.get("category") == "sarvanamasthana" or morph.get("is_sarvanamasthana", False)
+
+
+# --- Pratyāhāra saṃjñās (phonological labels referenced by 6.1 rules) ---
+# These are assigned based on the token's final phoneme, not morphology.
+
+def _ends_in_pratyahara(token: str, prat: str) -> bool:
+    """True if the token's relevant boundary phoneme is in the pratyāhāra."""
+    if not token:
+        return False
+    try:
+        phonemes = set(PratyaharaResolver.resolve_list(prat))
+        return token[-1] in phonemes
+    except Exception:
+        return False
+
+
+def _is_ac(tok: str, morph: Dict[str, Any]) -> bool:
+    """The token ends in a vowel (ac pratyāhāra)."""
+    return _ends_in_pratyahara(tok, "aC")
+
+
+def _is_ik(tok: str, morph: Dict[str, Any]) -> bool:
+    """The token ends in i/u/ṛ/ḷ (iK pratyāhāra)."""
+    return _ends_in_pratyahara(tok, "iK")
+
+
+def _is_ak(tok: str, morph: Dict[str, Any]) -> bool:
+    """The token ends in a simple vowel (aK pratyāhāra)."""
+    return _ends_in_pratyahara(tok, "aK")
+
+
+def _is_hal(tok: str, morph: Dict[str, Any]) -> bool:
+    """The token ends in a consonant (hal pratyāhāra)."""
+    if not tok:
+        return False
+    try:
+        consonants = set(PratyaharaResolver.resolve_list("hal"))
+        return tok[-1] in consonants
+    except Exception:
+        return False
+
+
 # Map: sañjñā name (SLP1 normalized) -> list of predicates
 SANJÑA_PREDICATES: Dict[str, List[SanjnaPredicateFn]] = {
     # --- Pragṛhya (1.1.11–19): no vowel sandhi —-
@@ -128,6 +212,20 @@ SANJÑA_PREDICATES: Dict[str, List[SanjnaPredicateFn]] = {
     "avyaya": [
         lambda tok, morph: morph.get("is_avyaya", False),
     ],
+    # --- Derivational / affix saṃjñās (3.x–7.x conditions) —-
+    "dhatu": [_is_dhatu],
+    "sup": [_is_sup],
+    "ting": [_is_ting],
+    "krt": [_is_krt],
+    "ardhadhatuka": [_is_ardhadhatuka],
+    "sarvadhatuka": [_is_sarvadhatuka],
+    "gati": [_is_gati],
+    "sarvanamasthana": [_is_sarvanamasthana],
+    # --- Pratyāhāra saṃjñās (phonological labels) —-
+    "ac": [_is_ac],
+    "iK": [_is_ik],
+    "aK": [_is_ak],
+    "hal": [_is_hal],
 }
 
 

@@ -24,6 +24,10 @@ class SutraContext:
     tags_required: Set[str] = field(default_factory=set)
     match_pos: str = "end"
     commentary_note: str = ""
+    sanjna_required: Set[str] = field(default_factory=set)
+    prohibit_if_sanjna: Set[str] = field(default_factory=set)
+    sthani_phoneme: Optional[str] = None
+    morphological_category: Optional[str] = None
 
 
 @dataclass
@@ -99,15 +103,15 @@ class CompiledSutra:
             return False
 
         if self.spec.target_context:
-            if not _context_matches(self.spec.target_context, left, "end", right):
+            if not _context_matches(self.spec.target_context, left, "end", right, context, "left"):
                 return False
 
         if self.spec.left_context:
-            if not _context_matches(self.spec.left_context, left, "end", right):
+            if not _context_matches(self.spec.left_context, left, "end", right, context, "left"):
                 return False
 
         if self.spec.right_context:
-            if not _context_matches(self.spec.right_context, right, "start", left):
+            if not _context_matches(self.spec.right_context, right, "start", left, context, "right"):
                 return False
 
         return True
@@ -175,13 +179,38 @@ def _is_savarna(c1: str, c2: str) -> bool:
 
 
 def _context_matches(ctx: SutraContext, text: str, pos: str,
-                     other_text: str = "") -> bool:
+                     other_text: str = "", context: Any = None,
+                     side: str = "left") -> bool:
     """Check if a context condition matches against a string at the given position.
 
     other_text is the opposite-side text (used for savarṇa meta-term checks).
+    context is an ExecutionContext (used for saṃjñā-gated and sthāni matching).
+    side is which token this context applies to ('left' or 'right').
     """
     if not ctx:
         return True
+
+    # Saṃjñā-gated matching: the token must carry all required saṃjñā tags.
+    if ctx.sanjna_required:
+        if context is None:
+            return False
+        for sanjna in ctx.sanjna_required:
+            if not context.has_sanjna(side, sanjna):
+                return False
+
+    # Prohibit-if-sañjñā: block if the token carries any of these.
+    if ctx.prohibit_if_sanjna:
+        if context is not None:
+            for sanjna in ctx.prohibit_if_sanjna:
+                if context.has_sanjna(side, sanjna):
+                    return False
+
+    # Sthāni phoneme: match the original (pre-mutation) boundary, not current.
+    if ctx.sthani_phoneme:
+        if context is None or context.trace is None:
+            return False
+        original = context.trace.get_original_left_boundary()
+        return original == ctx.sthani_phoneme if original else False
 
     if ctx.exact_text:
         alternatives = [a for a in ctx.exact_text.replace(",", "|").split("|") if a]
