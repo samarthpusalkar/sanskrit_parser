@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from core.shiva_sutras import PratyaharaResolver
 from core.phonology import GUNA_MAP, VRIDDHI_MAP, SAVARNA_LONG
+from .derivation_timeline import chapter_of, pada_of
 
 
 @dataclass
@@ -153,6 +154,18 @@ class CompiledSutra:
                 new_left = new_left + emit
             else:
                 new_right = emit + new_right
+
+        # Record the step on the timeline if a context was provided.
+        if context is not None and hasattr(context, "trace") and context.trace is not None:
+            from .derivation_timeline import DerivationStep
+            step = DerivationStep(
+                sutra_id=self.sutra_id,
+                rule_chapter=chapter_of(self.sutra_id),
+                rule_pada=pada_of(self.sutra_id),
+                left_before=left, right_before=right,
+                left_after=new_left, right_after=new_right,
+            )
+            context.trace.record(step)
 
         return new_left, new_right
 

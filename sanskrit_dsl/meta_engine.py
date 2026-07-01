@@ -126,25 +126,20 @@ class AnuvrttiTracker:
             self.active_domain = spec.domain
             return
 
-        if spec.target_context:
-            self.active_target = spec.target_context
+        # Anuvṛtti carries only left/right *contextual conditions*, never the
+        # target phoneme or operation of a previous sūtra. Each sūtra's target
+        # and operation are its own.
         if spec.left_context:
             self.active_left_context = spec.left_context
         if spec.right_context:
             self.active_right_context = spec.right_context
-        if spec.operation and spec.operation.op_type not in ("non_operational", "governance"):
-            self.active_operation = spec.operation
 
     def get_inherited(self, spec: SutraSpec) -> SutraSpec:
-        """Fill in missing slots from anuvṛtti (including right_context)."""
-        if not spec.target_context and self.active_target:
-            spec.target_context = self.active_target
+        """Fill in missing left/right contextual slots from anuvṛtti."""
         if not spec.left_context and self.active_left_context:
             spec.left_context = self.active_left_context
         if not spec.right_context and self.active_right_context:
             spec.right_context = self.active_right_context
-        if spec.operation.op_type == "non_operational" and self.active_operation:
-            spec.operation = self.active_operation
         return spec
 
 
@@ -324,12 +319,17 @@ class MetaRuleEngine:
     @staticmethod
     def _scope_subsumes(niyama: SutraSpec, vidhi: SutraSpec) -> bool:
         """Does the niyama's condition scope subsume the vidhi's?"""
-        if niyama.target_context and vidhi.target_context:
-            if niyama.target_context.pratyahara == vidhi.target_context.pratyahara:
-                return True
+        # A niyama with no target context is too abstract to debar a specific vidhi.
+        if not niyama.target_context:
+            return False
+        if vidhi.target_context:
+            if niyama.target_context.pratyahara and vidhi.target_context.pratyahara:
+                if niyama.target_context.pratyahara == vidhi.target_context.pratyahara:
+                    return True
             if niyama.target_context.exact_text and vidhi.target_context.exact_text:
                 n_alts = set(niyama.target_context.exact_text.replace(",", "|").split("|"))
                 v_alts = set(vidhi.target_context.exact_text.replace(",", "|").split("|"))
                 if v_alts <= n_alts:
                     return True
-        return True if not niyama.target_context else False
+        # Default conservative: do not debar unless scope is clearly shown.
+        return False

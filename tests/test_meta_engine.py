@@ -119,11 +119,10 @@ class TestAnuvrtti:
 class TestPragrhya:
     def test_pragrhya_short_circuit_in_executor(self):
         executor = DSLExecutor()
-        # "iti" ends in 'i' and is a typical pragṛhya-like token in the tagger's
-        # predicate set. We assert the executor returns an un-joined form.
-        result = executor.execute_sandhi("iti", "eva")
-        if "pragrhya" in result.get("source", ""):
-            assert result["joined"] == "iti eva"
+        # "i" is a single-vowel nipāta and is pragṛhya by 1.1.14 when marked as nipāta.
+        result = executor.execute_sandhi("i", "eva", left_morph={"is_nipata": True})
+        assert result.get("source") == "pragrhya", f"expected pragrhya short-circuit, got {result['source']}"
+        assert result["joined"] == "i eva"
 
 
 class TestSutraSpecExecutable:

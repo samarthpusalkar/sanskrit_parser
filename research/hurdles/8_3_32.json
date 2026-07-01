@@ -1,0 +1,10 @@
+{
+  "sutra_id": "8.3.32",
+  "hurdle_type": "llm_extraction_failed",
+  "description": "LLM returned: timed out",
+  "blocking": false,
+  "approach_attempted": "",
+  "commentary_reference": "",
+  "workaround": null,
+  "recorded_at": "2026-07-01T14:11:01Z"
+}
