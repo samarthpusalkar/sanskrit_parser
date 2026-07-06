@@ -20,6 +20,7 @@ import argparse
 import hashlib
 import json
 import os
+import socket
 import sqlite3
 import sys
 import time
@@ -203,7 +204,7 @@ class ExtractorDB:
             rows = conn.execute(
                 """SELECT p.prerequisite_sutra_id, s.sutra_dev, s.pada_cheda,
                           s.sutra_type, s.samasta_sutra, s.anuvrtti, s.adhikara
-                   FROM chapter_prerequisites p
+                   FROM panini_chapter_prerequisites p
                    JOIN sutras s ON s.id = p.prerequisite_sutra_id
                    WHERE p.chapter_prefix = ?
                    ORDER BY p.prerequisite_sutra_id""",
@@ -248,13 +249,14 @@ class ExtractorDB:
 
     def is_extracted(self, sutra_id: str) -> bool:
         with self.connect() as conn:
-            row = conn.execute("SELECT 1 FROM rules WHERE sutra_id = ?", (sutra_id,)).fetchone()
+            row = conn.execute("SELECT 1 FROM panini_rules WHERE sutra_id = ?", (sutra_id,)).fetchone()
         return row is not None
 
     def list_chapter_prefixes(self) -> List[str]:
         with self.connect() as conn:
             rows = conn.execute(
-                "SELECT DISTINCT substr(id, 1, instr(id, '.', -1) - 1) FROM sutras"
+                "SELECT DISTINCT substr(id, 1, instr(id, '.') - 1) || '.' || "
+                "substr(id, instr(id, '.') + 1, 1) FROM sutras ORDER BY 1"
             ).fetchall()
         return sorted(r[0] for r in rows if r[0])
 
@@ -300,28 +302,41 @@ def _safe_parse_json(text: str, expect_array: bool = False) -> Optional[Any]:
         return None
 
 
-def call_ollama(prompt: str, model: str, timeout: int = 120,
-                expect_array: bool = False) -> Optional[Any]:
-    """Call the Ollama API and return parsed JSON object or array."""
-    payload = json.dumps({
-        "model": model,
-        "prompt": prompt,
-        "stream": False,
-        "format": "json",
-    }).encode("utf-8")
-    req = urllib.request.Request(
-        OLLAMA_URL,
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            result = json.loads(response.read().decode("utf-8"))
-        text = result.get("response", "")
-        return _safe_parse_json(text, expect_array=expect_array)
-    except Exception as e:
-        return {"error": str(e)}
+def call_ollama(prompt: str, model: str, timeout: int = 300,
+                expect_array: bool = False, max_retries: int = 3) -> Optional[Any]:
+    """Call the Ollama API and return parsed JSON object or array. Retries on timeout."""
+    for attempt in range(max_retries):
+        try:
+            payload = json.dumps({
+                "model": model,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json",
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                OLLAMA_URL,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                result = json.loads(response.read().decode("utf-8"))
+            text = result.get("response", "")
+            return _safe_parse_json(text, expect_array=expect_array)
+        except (urllib.error.HTTPError, urllib.error.URLError) as e:
+            if attempt < max_retries - 1:
+                wait = min(2 ** (attempt + 1), 30)
+                time.sleep(wait)
+                continue
+            return {"error": f"HTTP/URL error after {max_retries} retries: {e}"}
+        except (TimeoutError, socket.timeout) as e:
+            if attempt < max_retries - 1:
+                time.sleep(2)
+                continue
+            return {"error": f"timed out after {max_retries} attempts of {timeout}s"}
+        except Exception as e:
+            return {"error": str(e)}
+    return {"error": "exhausted retries"}
 
 
 # ---------------------------------------------------------------------------
@@ -389,12 +404,61 @@ def build_definition_batch_prompt(
     return "\n".join(lines)
 
 
+def build_operational_batch_prompt(
+    target_sutras: Sequence[Dict[str, Any]],
+    prerequisites: Sequence[Dict[str, Any]],
+    previous_sutras: Sequence[Dict[str, Any]],
+    schema: Dict[str, Any],
+) -> str:
+    """Build a batch prompt for multiple operational (vidhi/niyama) sūtras."""
+    lines = [
+        "You are a Pāṇinian grammar expert. Extract compiler-ready metadata for EACH of the",
+        "following operational (vidhi/niyama) sūtras. They are in the same pāda, so anuvṛtti and",
+        "adhikāra context carries across them.",
+        "",
+    ]
+
+    if prerequisites:
+        lines.append("RELEVANT DEFINITIONAL CONTEXT IN FORCE:")
+        for p in prerequisites:
+            lines.extend(["  " + line for line in _sutra_block(p, include_commentary=False)])
+            lines.append("")
+
+    if previous_sutras:
+        lines.append("PREVIOUS OPERATIONAL SŪTRAS IN THIS PĀDA:")
+        for ps in previous_sutras:
+            lines.extend(["  " + line for line in _sutra_block(ps, include_commentary=False)])
+            lines.append("")
+
+    lines.append("TARGET OPERATIONAL SŪTRAS TO EXTRACT (in order):")
+    for i, s in enumerate(target_sutras, 1):
+        lines.append(f"\n--- Sūtra {i}: {s['id']} ---")
+        lines.extend(_sutra_block(s, include_commentary=True))
+
+    lines.extend([
+        "",
+        "Return a JSON ARRAY with one extraction object per target sūtra, IN THE SAME ORDER.",
+        "Each object must follow this schema (use null for unknown fields; all phonemes in SLP1):",
+        json.dumps(schema, indent=2, ensure_ascii=False),
+        "",
+        "For each sūtra explicitly identify:",
+        "1. rule_type: vidhi or niyama?",
+        "2. operation_type and exact target pratyāhāra/phoneme.",
+        "3. replacement, compute_fn, left_consume, right_consume.",
+        "4. left/right contexts and any required/prohibited saṃjñās.",
+        "5. What this sūtra carries forward via anuvṛtti.",
+        "Return ONLY the JSON array, no explanation.",
+    ])
+    return "\n".join(lines)
+
+
 def build_operational_prompt(
     target_sutra: Dict[str, Any],
     prerequisites: Sequence[Dict[str, Any]],
     previous_sutras: Sequence[Dict[str, Any]],
     schema: Dict[str, Any],
 ) -> str:
+    """Build a single-sūtra operational prompt (fallback when batch_size is 1)."""
     lines = [
         "You are a Pāṇinian grammar expert. Extract compiler-ready metadata for ONE operational",
         "(vidhi/niyama) sūtra.",
@@ -536,7 +600,7 @@ def store_comprehensive_extraction(
     is_definition = rule_type in ("samjna_definition", "paribhasa", "adhikara", "atidesa")
 
     conn.execute(
-        """INSERT OR REPLACE INTO rules (
+        """INSERT OR REPLACE INTO panini_rules (
             sutra_id, adhyaya, pada, sutra_no, sutra_dev, pada_cheda, sutra_type,
             samasta_sutra, anuvrtti_text, adhikara, adhikara_chain, source_text_hash,
             rule_type, domain, is_executable, is_meta_rule, is_definition,
@@ -580,15 +644,15 @@ def store_comprehensive_extraction(
     )
 
     # Wipe and rewrite child rows for idempotency.
-    conn.execute("DELETE FROM rule_contexts WHERE rule_id = ?", (sid,))
-    conn.execute("DELETE FROM rule_conditions WHERE rule_id = ?", (sid,))
-    conn.execute("DELETE FROM rule_paribhasa_axioms WHERE rule_id = ?", (sid,))
-    conn.execute("DELETE FROM rule_anuvrtti_links WHERE rule_id = ?", (sid,))
+    conn.execute("DELETE FROM panini_rule_contexts WHERE rule_id = ?", (sid,))
+    conn.execute("DELETE FROM panini_rule_conditions WHERE rule_id = ?", (sid,))
+    conn.execute("DELETE FROM panini_rule_paribhasa_axioms WHERE rule_id = ?", (sid,))
+    conn.execute("DELETE FROM panini_rule_anuvrtti_links WHERE rule_id = ?", (sid,))
 
     for ctx in _coerce_list(extraction.get("contexts")):
         role = ctx.get("role", "target")
         conn.execute(
-            """INSERT INTO rule_contexts (
+            """INSERT INTO panini_rule_contexts (
                 rule_id, context_role, position, pratyahara, exact_phonemes,
                 sanjna_required, sanjna_prohibited, morphological_category,
                 morphological_features, is_padanta, is_samhita, is_savarna,
@@ -600,7 +664,7 @@ def store_comprehensive_extraction(
 
     for factor in _coerce_list(extraction.get("conditioning_factors")):
         conn.execute(
-            """INSERT INTO rule_conditions (
+            """INSERT INTO panini_rule_conditions (
                 rule_id, factor_type, condition_text, evaluability,
                 required_sanjnas, prohibited_sanjnas, required_morph_features,
                 required_words, required_domain, required_operation_history,
@@ -626,7 +690,7 @@ def store_comprehensive_extraction(
     paribhasa = _coerce_dict(extraction.get("paribhasa_axiom"))
     if paribhasa:
         conn.execute(
-            """INSERT INTO rule_paribhasa_axioms (
+            """INSERT INTO panini_rule_paribhasa_axioms (
                 rule_id, axiom_ast, paribhasa_category, scope_sutra_ids,
                 applies_to_domains, applies_to_operation_types
             ) VALUES (?, ?, ?, ?, ?, ?)
@@ -644,7 +708,7 @@ def store_comprehensive_extraction(
     if anuvrtti.get("inherited_from_sutra_id"):
         for field in anuvrtti.get("carries", []):
             conn.execute(
-                """INSERT INTO rule_anuvrtti_links (rule_id, inherited_from_sutra_id, inherited_field)
+                """INSERT INTO panini_rule_anuvrtti_links (rule_id, inherited_from_sutra_id, inherited_field)
                    VALUES (?, ?, ?)
                 """,
                 (sid, anuvrtti["inherited_from_sutra_id"], field),
@@ -740,10 +804,10 @@ def extract_operational_sutra(
     model: str,
     delay: float,
 ) -> bool:
-    """Per-sūtra operational extraction. Returns True if stored."""
+    """Per-sūtra operational extraction fallback. Returns True if stored."""
     schema = build_extraction_schema()
     prompt = build_operational_prompt(sutra, prerequisites, previous_sutras, schema)
-    result = call_ollama(prompt, model, timeout=120, expect_array=False)
+    result = call_ollama(prompt, model, timeout=300, expect_array=False)
 
     if isinstance(result, dict) and "error" in result:
         record_hurdle(sutra["id"], [result["error"]])
@@ -765,6 +829,136 @@ def extract_operational_sutra(
     return True
 
 
+def extract_operational_batch(
+    db: ExtractorDB,
+    sutras: Sequence[Dict[str, Any]],
+    prerequisites: Sequence[Dict[str, Any]],
+    model: str,
+    delay: float,
+    resume: bool,
+) -> Tuple[int, int, List[str]]:
+    """Batch-extract operational sūtras. Returns (attempted, stored, failed_ids)."""
+    schema = build_extraction_schema()
+    attempted = 0
+    stored = 0
+    failed_ids: List[str] = []
+    previous: List[Dict[str, Any]] = []
+
+    for s in sutras:
+        if resume and db.is_extracted(s["id"]):
+            previous.append(s)
+            continue
+
+        # Previous context is all successfully extracted operational sūtras so far.
+        prompt = build_operational_prompt(s, prerequisites, previous, schema)
+        attempted += 1
+        result = call_ollama(prompt, model, timeout=300, expect_array=False)
+
+        if isinstance(result, dict) and "error" in result:
+            record_hurdle(s["id"], [result["error"]])
+            failed_ids.append(s["id"])
+            continue
+        if not isinstance(result, dict):
+            record_hurdle(s["id"], ["non-object response"])
+            failed_ids.append(s["id"])
+            continue
+
+        errors = validate_extraction(s["id"], result)
+        if errors:
+            record_hurdle(s["id"], errors)
+            failed_ids.append(s["id"])
+            continue
+
+        with db.connect() as conn:
+            store_comprehensive_extraction(conn, s, result, model, "per_sutra")
+        stored += 1
+        previous.append(s)
+
+        if delay > 0:
+            time.sleep(delay)
+
+    return attempted, stored, failed_ids
+
+
+def extract_operational_group(
+    db: ExtractorDB,
+    sutras: Sequence[Dict[str, Any]],
+    prerequisites: Sequence[Dict[str, Any]],
+    previous_sutras: Sequence[Dict[str, Any]],
+    model: str,
+    delay: float,
+    batch_size: int,
+    resume: bool,
+) -> Tuple[int, int, List[str]]:
+    """Extract operational sūtras using batching when batch_size > 1.
+
+    Each batch includes all previous sūtras as anuvṛtti context, so earlier
+    sūtras in the group are repeated in the prompt for later ones. This keeps
+    the LLM aware of the running context without needing stateful inference.
+    """
+    if batch_size <= 1:
+        return extract_operational_batch(db, sutras, prerequisites, model, delay, resume)
+
+    schema = build_extraction_schema()
+    attempted = 0
+    stored = 0
+    failed_ids: List[str] = []
+    previous = list(previous_sutras)
+
+    batches = [sutras[i : i + batch_size] for i in range(0, len(sutras), batch_size)]
+    for batch_index, original_batch in enumerate(batches):
+        batch = [s for s in original_batch if not (resume and db.is_extracted(s["id"]))]
+        already_extracted = [s for s in original_batch if db.is_extracted(s["id"])]
+        if already_extracted:
+            previous.extend(already_extracted)
+        if not batch:
+            continue
+
+        attempted += len(batch)
+        prompt = build_operational_batch_prompt(batch, prerequisites, previous, schema)
+        result = call_ollama(prompt, model, timeout=300, expect_array=True)
+
+        if isinstance(result, dict) and "error" in result:
+            # Whole batch failed — retry per-sūtra.
+            a, s, f = extract_operational_batch(
+                db, batch, prerequisites, model, delay, resume=False
+            )
+            attempted += a - len(batch)  # avoid double-counting (a == len(batch))
+            stored += s
+            failed_ids.extend(f)
+            previous.extend([s for s in batch if s["id"] not in f])
+            continue
+        if not isinstance(result, list):
+            a, s, f = extract_operational_batch(
+                db, batch, prerequisites, model, delay, resume=False
+            )
+            attempted += a - len(batch)
+            stored += s
+            failed_ids.extend(f)
+            previous.extend([s for s in batch if s["id"] not in f])
+            continue
+
+        for idx, s in enumerate(batch):
+            if idx >= len(result):
+                failed_ids.append(s["id"])
+                continue
+            extraction = result[idx]
+            errors = validate_extraction(s["id"], extraction)
+            if errors:
+                record_hurdle(s["id"], errors)
+                failed_ids.append(s["id"])
+                continue
+            with db.connect() as conn:
+                store_comprehensive_extraction(conn, s, extraction, model, "batch_operational")
+            stored += 1
+            previous.append(s)
+
+        if delay > 0:
+            time.sleep(delay)
+
+    return attempted, stored, failed_ids
+
+
 def extract_chapter_prefix(
     db: ExtractorDB,
     chapter_prefix: str,
@@ -772,6 +966,7 @@ def extract_chapter_prefix(
     model: str,
     delay: float,
     batch_size: int,
+    operational_batch_size: int,
     resume: bool,
 ) -> Dict[str, Any]:
     """Extract one chapter prefix."""
@@ -797,19 +992,12 @@ def extract_chapter_prefix(
         stats["definitional"]["failed"] = failed
 
     if mode in ("operational", "both") and operational:
-        # Previous operational sūtras accumulate within the pāda for anuvṛtti context.
-        previous: List[Dict[str, Any]] = []
-        for s in operational:
-            if resume and db.is_extracted(s["id"]):
-                previous.append(s)
-                continue
-            stats["operational"]["attempted"] += 1
-            ok = extract_operational_sutra(db, s, prerequisites, previous, model, delay)
-            if ok:
-                stats["operational"]["stored"] += 1
-                previous.append(s)
-            else:
-                stats["operational"]["failed"].append(s["id"])
+        attempted, stored, failed = extract_operational_group(
+            db, operational, prerequisites, [], model, delay, operational_batch_size, resume
+        )
+        stats["operational"]["attempted"] = attempted
+        stats["operational"]["stored"] = stored
+        stats["operational"]["failed"] = failed
 
     return stats
 
@@ -822,7 +1010,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         default="both")
     parser.add_argument("--model", default="deepseek-v4-pro:cloud")
     parser.add_argument("--delay", type=float, default=0.5)
-    parser.add_argument("--batch-size", type=int, default=50)
+    parser.add_argument("--batch-size", type=int, default=50,
+                        help="Batch size for definitional sūtras")
+    parser.add_argument("--operational-batch-size", type=int, default=20,
+                        help="Batch size for operational sūtras (1 = per-sūtra)")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--prerequisite-map", default=PREREQ_PATH)
     parser.add_argument("--dry-run", action="store_true")
@@ -837,14 +1028,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     # Load prerequisites into DB from JSON if table is empty.
     with db.connect() as conn:
-        count = conn.execute("SELECT COUNT(*) FROM chapter_prerequisites").fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM panini_chapter_prerequisites").fetchone()[0]
         if count == 0 and os.path.exists(args.prerequisite_map):
             with open(args.prerequisite_map, "r", encoding="utf-8") as f:
                 prereq_data = json.load(f)
             for chapter, ids in prereq_data.items():
                 for sid in ids:
                     conn.execute(
-                        "INSERT OR IGNORE INTO chapter_prerequisites (chapter_prefix, prerequisite_sutra_id) VALUES (?, ?)",
+                        "INSERT OR IGNORE INTO panini_chapter_prerequisites (chapter_prefix, prerequisite_sutra_id) VALUES (?, ?)",
                         (chapter, sid),
                     )
             conn.commit()
@@ -852,6 +1043,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if args.chapter_prefix == "all":
         prefixes = db.list_chapter_prefixes()
+    elif "." not in args.chapter_prefix:
+        # Whole adhyāya requested, e.g. "3" -> expand to all pādas present in DB.
+        prefixes = [p for p in db.list_chapter_prefixes() if p.startswith(args.chapter_prefix + ".")]
+        prefixes.sort()
+        if not prefixes:
+            print(f"No pādas found for adhyāya {args.chapter_prefix}")
+            return 1
     else:
         prefixes = [args.chapter_prefix]
 
@@ -859,7 +1057,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     for prefix in prefixes:
         print(f"\n=== Extracting {prefix} ===")
         stats = extract_chapter_prefix(
-            db, prefix, args.mode, args.model, args.delay, args.batch_size, args.resume
+            db, prefix, args.mode, args.model, args.delay,
+            args.batch_size, args.operational_batch_size, args.resume
         )
         all_stats.append(stats)
         print(json.dumps(stats, indent=2, ensure_ascii=False))
