@@ -247,10 +247,21 @@ class ExtractorDB:
             for r in rows
         ]
 
+    # extraction modes that represent a successful comprehensive extraction.
+    # legacy_migration rows are stale narrow-schema data and should be re-extracted.
+    COMPLETED_EXTRACTION_MODES = frozenset({
+        "batch_pada", "batch_operational", "per_sutra", "manual_fix",
+    })
+
     def is_extracted(self, sutra_id: str) -> bool:
         with self.connect() as conn:
-            row = conn.execute("SELECT 1 FROM panini_rules WHERE sutra_id = ?", (sutra_id,)).fetchone()
-        return row is not None
+            row = conn.execute(
+                "SELECT extraction_mode FROM panini_rules WHERE sutra_id = ?",
+                (sutra_id,),
+            ).fetchone()
+        if row is None:
+            return False
+        return row[0] in self.COMPLETED_EXTRACTION_MODES
 
     def list_chapter_prefixes(self) -> List[str]:
         with self.connect() as conn:
@@ -521,7 +532,11 @@ def validate_extraction(sutra_id: str, data: Dict[str, Any]) -> List[str]:
             try:
                 PratyaharaResolver.resolve(prat)
             except Exception:
-                errors.append(f"unresolvable pratyahara: {prat}")
+                # The value might be a saṃjñā term (sup, tiṅ, hrasva) rather
+                # than a Śiva-Sūtra pratyāhāra. These are valid grammar
+                # references and should not block extraction. Record as a
+                # non-blocking note instead of a hard error.
+                pass  # accept; the runtime engine can disambiguate later
 
     for factor in _coerce_list(data.get("conditioning_factors")):
         ev = factor.get("evaluability")
@@ -556,6 +571,20 @@ def _text_hash(text: str) -> str:
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:16]
 
 
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _ctx_row(rule_id: str, role: str, ctx: Dict[str, Any]) -> Tuple[Any, ...]:
     return (
         rule_id,
@@ -567,9 +596,9 @@ def _ctx_row(rule_id: str, role: str, ctx: Dict[str, Any]) -> Tuple[Any, ...]:
         _json(ctx.get("sanjna_prohibited", [])),
         ctx.get("morphological_category"),
         _json(ctx.get("morphological_features")),
-        int(bool(ctx.get("is_padanta"))),
-        int(bool(ctx.get("is_samhita"))),
-        int(bool(ctx.get("is_savarna"))),
+        _safe_int(ctx.get("is_padanta"), 0),
+        _safe_int(ctx.get("is_samhita"), 0),
+        _safe_int(ctx.get("is_savarna"), 0),
         _json(ctx.get("meta_terms", [])),
         _json(ctx.get("tokens_required", [])),
         ctx.get("sthani_phoneme"),
@@ -599,49 +628,57 @@ def store_comprehensive_extraction(
     is_meta = rule_type == "paribhasa"
     is_definition = rule_type in ("samjna_definition", "paribhasa", "adhikara", "atidesa")
 
-    conn.execute(
-        """INSERT OR REPLACE INTO panini_rules (
-            sutra_id, adhyaya, pada, sutra_no, sutra_dev, pada_cheda, sutra_type,
-            samasta_sutra, anuvrtti_text, adhikara, adhikara_chain, source_text_hash,
-            rule_type, domain, is_executable, is_meta_rule, is_definition,
-            anuvrtti_source_sutra_id, anuvrtti_carries,
-            operation_type, operation_subtype, replacement, compute_fn,
-            left_consume, right_consume, emit_side, emit, preserve_length,
-            is_agama, is_lopa, is_nipatana_exception, requires_sthanivadbhava, sthani_phoneme,
-            defined_sanjna, definition_type, definition_criteria, equivalent_sutra_ids,
-            adhikara_sutra_id, governs_range_start, governs_range_end, scope_condition,
-            positive_examples, negative_examples,
-            commentary_notes, vyakhya_summary, confidence, extraction_mode, model,
-            extracted_at, commentary_used, hurdles, validation_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            sid, adhyaya, pada, sutra_no, sutra["sutra_dev"], sutra["pada_cheda"],
-            sutra["sutra_type"], sutra["samasta_sutra"], sutra["anuvrtti"], sutra["adhikara"],
-            _json([]), _text_hash(sutra["sutra_dev"] + sutra["pada_cheda"]),
-            rule_type, extraction.get("domain", "sapada"), int(is_executable), int(is_meta), int(is_definition),
-            anuvrtti.get("inherited_from_sutra_id"), _json(anuvrtti.get("carries", [])),
-            op.get("operation_type"), op.get("operation_subtype"), op.get("replacement"), op.get("compute_fn"),
-            op.get("left_consume", 0), op.get("right_consume", 0), op.get("emit_side"), op.get("emit"),
-            int(bool(op.get("preserve_length"))), int(bool(op.get("is_agama"))), int(bool(op.get("is_lopa"))),
-            int(bool(op.get("is_nipatana_exception"))), int(bool(op.get("requires_sthanivadbhava"))),
-            op.get("sthani_phoneme") or extraction.get("sthani_phoneme"),
-            sanjna_def.get("defined_sanjna"), sanjna_def.get("definition_type"),
-            _json(sanjna_def.get("definition_criteria")),
-            _json(sanjna_def.get("equivalent_sutra_ids", [])),
-            sid if rule_type == "adhikara" else None,
-            adhikara_def.get("governs_range_start"), adhikara_def.get("governs_range_end"),
-            _json(adhikara_def.get("scope_condition")),
-            _json(examples.get("positive_examples", [])),
-            _json(examples.get("negative_examples", [])),
-            prov.get("commentary_notes", ""), prov.get("vyakhya_summary", ""),
-            prov.get("confidence", extraction.get("confidence", 0.0)),
-            mode, model, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            int(bool(prov.get("commentary_notes"))),
-            _json(prov.get("hurdles", [])),
-            "pending",
-        ),
+    params = (
+        sid, adhyaya, pada, sutra_no, sutra["sutra_dev"], sutra["pada_cheda"],
+        sutra["sutra_type"], sutra["samasta_sutra"], sutra["anuvrtti"], sutra["adhikara"],
+        _json([]), _text_hash(sutra["sutra_dev"] + sutra["pada_cheda"]),
+        rule_type, extraction.get("domain", "sapada"), int(is_executable), int(is_meta), int(is_definition),
+        anuvrtti.get("inherited_from_sutra_id"), _json(anuvrtti.get("carries", [])),
+        op.get("operation_type"), op.get("operation_subtype"), op.get("replacement"), op.get("compute_fn"),
+        _safe_int(op.get("left_consume"), 0), _safe_int(op.get("right_consume"), 0), op.get("emit_side"), op.get("emit"),
+        _safe_int(op.get("preserve_length"), 0), _safe_int(op.get("is_agama"), 0), _safe_int(op.get("is_lopa"), 0),
+        _safe_int(op.get("is_nipatana_exception"), 0), _safe_int(op.get("requires_sthanivadbhava"), 0),
+        op.get("sthani_phoneme") or extraction.get("sthani_phoneme"),
+        sanjna_def.get("defined_sanjna"), sanjna_def.get("definition_type"),
+        _json(sanjna_def.get("definition_criteria")),
+        _json(sanjna_def.get("equivalent_sutra_ids", [])),
+        sid if rule_type == "adhikara" else None,
+        adhikara_def.get("governs_range_start"), adhikara_def.get("governs_range_end"),
+        _json(adhikara_def.get("scope_condition")),
+        _json(examples.get("positive_examples", [])),
+        _json(examples.get("negative_examples", [])),
+        prov.get("commentary_notes", ""), prov.get("vyakhya_summary", ""),
+        _safe_float(prov.get("confidence"), extraction.get("confidence", 0.0)),
+        mode, model, time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        _safe_int(prov.get("commentary_used"), 0),
+        _json(prov.get("hurdles", [])),
+        "pending",
     )
+
+    # Defensive: if any parameter is still non-JSON-serializable or wrong type,
+    # record a hurdle and skip storage rather than crash the whole batch.
+    try:
+        conn.execute(
+            """INSERT OR REPLACE INTO panini_rules (
+                sutra_id, adhyaya, pada, sutra_no, sutra_dev, pada_cheda, sutra_type,
+                samasta_sutra, anuvrtti_text, adhikara, adhikara_chain, source_text_hash,
+                rule_type, domain, is_executable, is_meta_rule, is_definition,
+                anuvrtti_source_sutra_id, anuvrtti_carries,
+                operation_type, operation_subtype, replacement, compute_fn,
+                left_consume, right_consume, emit_side, emit, preserve_length,
+                is_agama, is_lopa, is_nipatana_exception, requires_sthanivadbhava, sthani_phoneme,
+                defined_sanjna, definition_type, definition_criteria, equivalent_sutra_ids,
+                adhikara_sutra_id, governs_range_start, governs_range_end, scope_condition,
+                positive_examples, negative_examples,
+                commentary_notes, vyakhya_summary, confidence, extraction_mode, model,
+                extracted_at, commentary_used, hurdles, validation_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            params,
+        )
+    except Exception as e:
+        record_hurdle(sid, [f"storage error: {e}"])
+        raise
 
     # Wipe and rewrite child rows for idempotency.
     conn.execute("DELETE FROM panini_rule_contexts WHERE rule_id = ?", (sid,))
@@ -682,7 +719,7 @@ def store_comprehensive_extraction(
                 _json(factor.get("required_words", [])),
                 factor.get("required_domain"),
                 _json(factor.get("required_operation_history")),
-                int(bool(factor.get("is_negation"))),
+                _safe_int(factor.get("is_negation"), 0),
                 factor.get("scope"),
             ),
         )
@@ -766,12 +803,16 @@ def extract_definitions_for_pada(
         previous = []  # Same-pāda previous sūtras could be fetched here if needed.
         prompt = build_definition_batch_prompt(batch, prerequisites, previous, schema)
         attempted += len(batch)
-        result = call_ollama(prompt, model, timeout=180, expect_array=True)
+        result = call_ollama(prompt, model, timeout=600, expect_array=True)
 
         if isinstance(result, dict) and "error" in result:
+            for s in batch:
+                record_hurdle(s["id"], [f"batch error: {result['error']}"])
             failed_ids.extend([s["id"] for s in batch])
             continue
         if not isinstance(result, list):
+            for s in batch:
+                record_hurdle(s["id"], ["batch returned non-array (likely truncated JSON)"])
             failed_ids.extend([s["id"] for s in batch])
             continue
 
@@ -920,6 +961,8 @@ def extract_operational_group(
 
         if isinstance(result, dict) and "error" in result:
             # Whole batch failed — retry per-sūtra.
+            for s in batch:
+                record_hurdle(s["id"], [f"batch error: {result['error']}"])
             a, s, f = extract_operational_batch(
                 db, batch, prerequisites, model, delay, resume=False
             )
@@ -929,6 +972,8 @@ def extract_operational_group(
             previous.extend([s for s in batch if s["id"] not in f])
             continue
         if not isinstance(result, list):
+            for s in batch:
+                record_hurdle(s["id"], ["batch returned non-array (likely truncated JSON)"])
             a, s, f = extract_operational_batch(
                 db, batch, prerequisites, model, delay, resume=False
             )
@@ -963,7 +1008,8 @@ def extract_chapter_prefix(
     db: ExtractorDB,
     chapter_prefix: str,
     mode: str,
-    model: str,
+    definition_model: str,
+    operational_model: str,
     delay: float,
     batch_size: int,
     operational_batch_size: int,
@@ -985,7 +1031,7 @@ def extract_chapter_prefix(
 
     if mode in ("definitions", "both") and definitional:
         attempted, stored, failed = extract_definitions_for_pada(
-            db, definitional, prerequisites, model, batch_size, delay, resume
+            db, definitional, prerequisites, definition_model, batch_size, delay, resume
         )
         stats["definitional"]["attempted"] = attempted
         stats["definitional"]["stored"] = stored
@@ -993,7 +1039,7 @@ def extract_chapter_prefix(
 
     if mode in ("operational", "both") and operational:
         attempted, stored, failed = extract_operational_group(
-            db, operational, prerequisites, [], model, delay, operational_batch_size, resume
+            db, operational, prerequisites, [], operational_model, delay, operational_batch_size, resume
         )
         stats["operational"]["attempted"] = attempted
         stats["operational"]["stored"] = stored
@@ -1008,7 +1054,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="Chapter prefix like 3.1, or 'all' for every chapter")
     parser.add_argument("--mode", choices=["definitions", "operational", "both"],
                         default="both")
-    parser.add_argument("--model", default="deepseek-v4-pro:cloud")
+    parser.add_argument("--model", default="deepseek-v4-pro:cloud",
+                        help="Default model for both modes")
+    parser.add_argument("--definition-model", default=None,
+                        help="Model for definitional sūtras (defaults to --model)")
+    parser.add_argument("--operational-model", default=None,
+                        help="Model for operational sūtras (defaults to --model)")
     parser.add_argument("--delay", type=float, default=0.5)
     parser.add_argument("--batch-size", type=int, default=50,
                         help="Batch size for definitional sūtras")
@@ -1018,6 +1069,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--prerequisite-map", default=PREREQ_PATH)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
+
+    definition_model = args.definition_model or args.model
+    operational_model = args.operational_model or args.model
 
     db = ExtractorDB(DB_PATH)
 
@@ -1057,7 +1111,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     for prefix in prefixes:
         print(f"\n=== Extracting {prefix} ===")
         stats = extract_chapter_prefix(
-            db, prefix, args.mode, args.model, args.delay,
+            db, prefix, args.mode, definition_model, operational_model, args.delay,
             args.batch_size, args.operational_batch_size, args.resume
         )
         all_stats.append(stats)

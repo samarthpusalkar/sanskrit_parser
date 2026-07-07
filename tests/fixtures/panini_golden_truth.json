@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "description": "Curated golden-truth test cases for Pāṇinian derivations. Each case asserts a known input → expected output through the deterministic engine, proving the extracted rules integrate with the runtime. Cases marked skip_if_legacy are skipped when the rule was migrated from the old narrow schema (extraction_mode=legacy_migration) because the legacy data lacks the rich context positions needed by the engine.",
+  "cases": [
+    {
+      "id": "sandhi_6_1_101_dirgha_savarna",
+      "sutra_id": "6.1.101",
+      "category": "sandhi",
+      "left": "rAm",
+      "right": "atra",
+      "left_sanjnas": [],
+      "right_sanjnas": [],
+      "expected_left": "rAm",
+      "expected_right": "Atra",
+      "expected_rule_id": "6.1.101",
+      "skip_if_legacy": true,
+      "note": "akas savarne dīrgha — homogeneous a+a → ā (dirgha). Legacy migration lacks correct right_context match_pos."
+    },
+    {
+      "id": "vikarana_3_1_68_shap",
+      "sutra_id": "3.1.68",
+      "category": "vikarana",
+      "left": "bhU",
+      "right": "ti",
+      "left_sanjnas": ["dhatu"],
+      "right_sanjnas": ["sArvadhAtuka"],
+      "expected_left": "bhU",
+      "expected_right": "Sapti",
+      "expected_rule_id": "3.1.68",
+      "note": "kartari śap — insert śap before sārvadhātuka affix in active voice."
+    },
+    {
+      "id": "krt_3_2_3_ka_after_long_a",
+      "sutra_id": "3.2.3",
+      "category": "krt",
+      "left": "pA",
+      "right": "",
+      "left_sanjnas": ["dhatu"],
+      "right_sanjnas": [],
+      "expected_left": "pA",
+      "expected_right": "ka",
+      "expected_rule_id": "3.2.3",
+      "note": "āto'nupasarge kaḥ — kṛt ka after root ending in long ā."
+    },
+    {
+      "id": "krt_3_3_57_ap_after_r",
+      "sutra_id": "3.3.57",
+      "category": "krt",
+      "left": "kf",
+      "right": "",
+      "left_sanjnas": ["dhatu"],
+      "right_sanjnas": [],
+      "expected_left": "kf",
+      "expected_right": "ap",
+      "expected_rule_id": "3.3.57",
+      "note": "ṛdorap — kṛt ap after root ending in ṛ."
+    },
+    {
+      "id": "definition_1_1_1_vrddhi",
+      "sutra_id": "1.1.1",
+      "category": "definition",
+      "left": "",
+      "right": "",
+      "left_sanjnas": [],
+      "right_sanjnas": [],
+      "expected_not_executable": true,
+      "expected_defined_sanjna_any_of": ["vfdDi", "vrddhi", "vruddhi"],
+      "note": "vṛddhir ādaiñ — defines the saṃjñā vṛddhi as āt, ai, au. Non-operational. Accept SLP1 or IAST spelling."
+    },
+    {
+      "id": "definition_3_1_32_dhatu_san",
+      "sutra_id": "3.1.32",
+      "category": "definition",
+      "left": "",
+      "right": "",
+      "left_sanjnas": [],
+      "right_sanjnas": [],
+      "expected_not_executable": true,
+      "expected_defined_sanjna_any_of": ["dhAtu", "dhātu", "dhatu"],
+      "note": "sanādyantā dhātavaḥ — roots ending in san etc. are called dhātu. Accept SLP1 or IAST spelling."
+    },
+    {
+      "id": "sandhi_6_1_77_yan",
+      "sutra_id": "6.1.77",
+      "category": "sandhi",
+      "left": "vad",
+      "right": "iti",
+      "left_sanjnas": [],
+      "right_sanjnas": [],
+      "expected_left": "vad",
+      "expected_right": "yiti",
+      "expected_rule_id": "6.1.77",
+      "skip_if_legacy": true,
+      "note": "iko yaṇ aci — i/u/ṛ/ḷ → y/v/r/l before a vowel (yaṇ). Legacy migration lacks correct right_context match_pos."
+    },
+    {
+      "id": "vikarana_3_1_80_u_after_dinvikrnvi",
+      "sutra_id": "3.1.80",
+      "category": "vikarana",
+      "left": "Dinvi",
+      "right": "ti",
+      "left_sanjnas": ["dhatu"],
+      "right_sanjnas": ["sArvadhAtuka"],
+      "expected_left": "Dinvi",
+      "expected_right": "uti",
+      "expected_rule_id": "3.1.80",
+      "note": "dhinvikṛṇvyor ca — insert u after dhinvi/kṛnvi before sārvadhātuka."
+    }
+  ]
+}

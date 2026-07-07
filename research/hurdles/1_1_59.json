@@ -1,10 +1,7 @@
 {
   "sutra_id": "1.1.59",
-  "hurdle_type": "vibhakti_incomplete",
-  "description": "Clean parser could not extract operation. sutra_type=AT$स्थानिवद्भावातिदेशः$",
-  "blocking": false,
-  "approach_attempted": "vibhakti_clean",
-  "commentary_reference": "",
-  "workaround": null,
-  "recorded_at": "2026-07-01T13:58:21Z"
+  "errors": [
+    "unresolvable pratyahara: a"
+  ],
+  "timestamp": "2026-07-06T17:17:36Z"
 }

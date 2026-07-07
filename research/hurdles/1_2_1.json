@@ -1,0 +1,7 @@
+{
+  "sutra_id": "1.2.1",
+  "errors": [
+    "batch error: timed out after 3 attempts of 180s"
+  ],
+  "timestamp": "2026-07-07T17:50:09Z"
+}

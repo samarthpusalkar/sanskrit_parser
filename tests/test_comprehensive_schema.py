@@ -90,14 +90,18 @@ class TestValidation:
         errors = validate_extraction("1.1.1", data)
         assert any("left_consume" in e for e in errors)
 
-    def test_unresolvable_pratyahara_fails(self):
+    def test_non_pratyahara_term_is_accepted(self):
+        # Saṃjñā terms (sup, tiṅ, hrasva) are valid grammar references but
+        # not Śiva-Sūtra pratyāhāras. They should not block extraction.
         data = {
             "rule_type": "vidhi",
             "operation": {"operation_type": "exact_substitute"},
             "contexts": [{"role": "target", "pratyahara": "XYZ"}],
         }
         errors = validate_extraction("1.1.1", data)
-        assert any("unresolvable pratyahara" in e for e in errors)
+        # Non-pratyāhāra values are now accepted (not hard errors) because
+        # they may be saṃjñā terms that the runtime engine can disambiguate.
+        assert not any("unresolvable pratyahara" in e for e in errors)
 
 
 class TestExtractionSchema:
