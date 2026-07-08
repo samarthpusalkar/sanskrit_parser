@@ -1,7 +1,7 @@
 {
   "sutra_id": "4.1.150",
   "errors": [
-    "llm error: HTTP/URL error after 3 retries: HTTP Error 429: Too Many Requests"
+    "llm error: HTTP/URL error after 3 retries: HTTP Error 502: Bad Gateway"
   ],
-  "timestamp": "2026-07-07T20:22:38Z"
+  "timestamp": "2026-07-08T08:46:55Z"
 }
