@@ -1,10 +1,7 @@
 {
   "sutra_id": "2.3.25",
-  "hurdle_type": "vocabulary_missing",
-  "description": "Vibhakti parser could not resolve semantics. op_type=governance",
-  "blocking": false,
-  "approach_attempted": "vibhakti_parse",
-  "commentary_reference": "",
-  "workaround": null,
-  "recorded_at": "2026-06-29T16:35:32Z"
+  "errors": [
+    "batch returned non-array (likely truncated JSON)"
+  ],
+  "timestamp": "2026-07-08T20:24:16Z"
 }

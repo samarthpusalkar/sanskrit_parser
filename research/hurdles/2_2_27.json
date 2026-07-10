@@ -1,0 +1,7 @@
+{
+  "sutra_id": "2.2.27",
+  "errors": [
+    "batch returned non-array (likely truncated JSON)"
+  ],
+  "timestamp": "2026-07-09T00:40:29Z"
+}

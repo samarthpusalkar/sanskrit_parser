@@ -1,10 +1,7 @@
 {
   "sutra_id": "6.3.16",
-  "hurdle_type": "vocabulary_missing",
-  "description": "Vibhakti parser could not resolve semantics. op_type=governance",
-  "blocking": false,
-  "approach_attempted": "vibhakti_parse",
-  "commentary_reference": "",
-  "workaround": null,
-  "recorded_at": "2026-06-29T16:35:33Z"
+  "errors": [
+    "batch error: HTTP/URL error after 3 retries: HTTP Error 429: Too Many Requests"
+  ],
+  "timestamp": "2026-07-09T04:01:51Z"
 }

@@ -1,0 +1,7 @@
+{
+  "sutra_id": "6.3.28",
+  "errors": [
+    "batch error: HTTP/URL error after 3 retries: HTTP Error 429: Too Many Requests"
+  ],
+  "timestamp": "2026-07-09T04:01:59Z"
+}

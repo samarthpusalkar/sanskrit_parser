@@ -251,6 +251,7 @@ class ExtractorDB:
     # legacy_migration rows are stale narrow-schema data and should be re-extracted.
     COMPLETED_EXTRACTION_MODES = frozenset({
         "batch_pada", "batch_operational", "per_sutra", "manual_fix",
+        "sequential", "batched_contextual",
     })
 
     def is_extracted(self, sutra_id: str) -> bool:
@@ -299,6 +300,31 @@ def load_commentary(sutra_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _safe_parse_json(text: str, expect_array: bool = False) -> Optional[Any]:
+    # First, try parsing the entire response as-is (handles clean JSON output).
+    try:
+        result = json.loads(text)
+        if expect_array and isinstance(result, list):
+            return result
+        if not expect_array and isinstance(result, dict):
+            return result
+        # If we expected an array but got a dict, or vice versa, fall through
+        # to the extraction logic below.
+        if expect_array and isinstance(result, dict):
+            # Maybe the dict wraps an array (e.g. {"results": [...]}).
+            for v in result.values():
+                if isinstance(v, list):
+                    return v
+            return None
+        if not expect_array and isinstance(result, list):
+            # If we expected an object but got a single-element array, unwrap it.
+            if len(result) == 1 and isinstance(result[0], dict):
+                return result[0]
+            return None
+        return result
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Fall back to extracting the JSON substring (handles markdown fences, trailing text).
     if expect_array:
         start = text.find("[")
         end = text.rfind("]") + 1
@@ -314,7 +340,8 @@ def _safe_parse_json(text: str, expect_array: bool = False) -> Optional[Any]:
 
 
 def call_ollama(prompt: str, model: str, timeout: int = 300,
-                expect_array: bool = False, max_retries: int = 3) -> Optional[Any]:
+                expect_array: bool = False, max_retries: int = 3,
+                num_predict: int = 36384) -> Optional[Any]:
     """Call the Ollama API and return parsed JSON object or array. Retries on timeout."""
     for attempt in range(max_retries):
         try:
@@ -323,6 +350,9 @@ def call_ollama(prompt: str, model: str, timeout: int = 300,
                 "prompt": prompt,
                 "stream": False,
                 "format": "json",
+                "options": {
+                    "num_predict": num_predict,
+                },
             }).encode("utf-8")
             req = urllib.request.Request(
                 OLLAMA_URL,
@@ -330,22 +360,31 @@ def call_ollama(prompt: str, model: str, timeout: int = 300,
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
+            call_start = time.time()
             with urllib.request.urlopen(req, timeout=timeout) as response:
                 result = json.loads(response.read().decode("utf-8"))
+            elapsed = time.time() - call_start
             text = result.get("response", "")
-            return _safe_parse_json(text, expect_array=expect_array)
+            parsed = _safe_parse_json(text, expect_array=expect_array)
+            ok = "OK" if parsed is not None else "PARSE_FAIL"
+            label = f"array[{len(parsed)}]" if isinstance(parsed, list) else ("obj" if isinstance(parsed, dict) else "?")
+            print(f"  [llm] {model} {ok} {label} {elapsed:.1f}s (attempt {attempt+1}/{max_retries})", flush=True)
+            return parsed
         except (urllib.error.HTTPError, urllib.error.URLError) as e:
+            print(f"  [llm] HTTP/URL error attempt {attempt+1}/{max_retries}: {e}", flush=True)
             if attempt < max_retries - 1:
                 wait = min(2 ** (attempt + 1), 30)
                 time.sleep(wait)
                 continue
             return {"error": f"HTTP/URL error after {max_retries} retries: {e}"}
         except (TimeoutError, socket.timeout) as e:
+            print(f"  [llm] timeout attempt {attempt+1}/{max_retries} ({timeout}s)", flush=True)
             if attempt < max_retries - 1:
                 time.sleep(2)
                 continue
             return {"error": f"timed out after {max_retries} attempts of {timeout}s"}
         except Exception as e:
+            print(f"  [llm] error attempt {attempt+1}/{max_retries}: {e}", flush=True)
             return {"error": str(e)}
     return {"error": "exhausted retries"}
 

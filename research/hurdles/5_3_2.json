@@ -1,10 +1,7 @@
 {
   "sutra_id": "5.3.2",
-  "hurdle_type": "vibhakti_incomplete",
-  "description": "Clean parser could not extract operation. sutra_type=AD$किंसर्वनामादिप्रकृत्यधिकारः$53026",
-  "blocking": false,
-  "approach_attempted": "vibhakti_clean",
-  "commentary_reference": "",
-  "workaround": null,
-  "recorded_at": "2026-07-07T19:06:33Z"
+  "errors": [
+    "batch error: HTTP/URL error after 3 retries: HTTP Error 429: Too Many Requests"
+  ],
+  "timestamp": "2026-07-09T03:52:28Z"
 }
