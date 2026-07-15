@@ -1,7 +1,7 @@
 {
   "sutra_id": "7.3.37",
   "errors": [
-    "batch error: HTTP/URL error after 3 retries: HTTP Error 429: Too Many Requests"
+    "batch result truncated: missing index"
   ],
-  "timestamp": "2026-07-09T04:09:16Z"
+  "timestamp": "2026-07-15T17:15:44Z"
 }

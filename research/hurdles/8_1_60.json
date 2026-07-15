@@ -1,10 +1,7 @@
 {
   "sutra_id": "8.1.60",
-  "hurdle_type": "vibhakti_incomplete",
-  "description": "Clean parser could not extract operation. sutra_type=V$$",
-  "blocking": false,
-  "approach_attempted": "vibhakti_clean",
-  "commentary_reference": "",
-  "workaround": null,
-  "recorded_at": "2026-07-15T12:58:10Z"
+  "errors": [
+    "batch result truncated: missing index"
+  ],
+  "timestamp": "2026-07-15T18:28:50Z"
 }

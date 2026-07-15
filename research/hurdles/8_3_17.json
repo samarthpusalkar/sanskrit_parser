@@ -1,7 +1,7 @@
 {
   "sutra_id": "8.3.17",
   "errors": [
-    "batch error: HTTP/URL error after 3 retries: HTTP Error 429: Too Many Requests"
+    "batch returned non-array (unparseable response)"
   ],
-  "timestamp": "2026-07-09T04:14:20Z"
+  "timestamp": "2026-07-15T19:02:19Z"
 }
