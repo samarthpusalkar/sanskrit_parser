@@ -1,7 +1,7 @@
 {
   "sutra_id": "4.3.168",
   "errors": [
-    "batch returned non-array (likely truncated JSON)"
+    "storage error: Error binding parameter 21 - probably unsupported type."
   ],
-  "timestamp": "2026-07-09T02:57:01Z"
+  "timestamp": "2026-07-13T13:37:08Z"
 }

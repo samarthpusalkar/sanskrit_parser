@@ -1,7 +1,7 @@
 {
   "sutra_id": "6.2.22",
   "errors": [
-    "batch error: HTTP/URL error after 3 retries: HTTP Error 429: Too Many Requests"
+    "batch returned non-array (likely truncated JSON)"
   ],
-  "timestamp": "2026-07-09T03:59:22Z"
+  "timestamp": "2026-07-13T20:25:55Z"
 }

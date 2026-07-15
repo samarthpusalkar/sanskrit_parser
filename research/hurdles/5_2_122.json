@@ -1,7 +1,7 @@
 {
   "sutra_id": "5.2.122",
   "errors": [
-    "batch error: HTTP/URL error after 3 retries: HTTP Error 429: Too Many Requests"
+    "batch error: HTTP/URL error after 3 retries: HTTP Error 502: Bad Gateway"
   ],
-  "timestamp": "2026-07-09T03:52:12Z"
+  "timestamp": "2026-07-13T15:39:27Z"
 }

@@ -171,20 +171,31 @@ class BatchedContextualExtractor:
                     time.sleep(self.delay)
                 continue
             if not isinstance(result, list):
+                # Try to salvage complete objects from truncated JSON
+                from batch_panini_extractor import _repair_truncated_json
+                # Re-read the raw text — but we don't have it here since call_ollama
+                # returns parsed. The repair already happened inside _safe_parse_json.
+                # If we still get non-list, fail the batch.
                 for s in batch_to_process:
-                    record_hurdle(s["id"], ["batch returned non-array (likely truncated JSON)"])
+                    record_hurdle(s["id"], ["batch returned non-array (unparseable response)"])
                 failed.extend([s["id"] for s in batch_to_process])
                 if self.delay > 0:
                     time.sleep(self.delay)
                 continue
 
-            # Process each sūtra's extraction from the batch result
+            # Process each sūtra's extraction from the batch result.
+            # If the array was truncated (fewer objects than expected),
+            # store the ones we got and fail only the missing ones.
             for idx, sutra in enumerate(batch_to_process):
                 if idx >= len(result):
                     record_hurdle(sutra["id"], ["batch result truncated: missing index"])
                     failed.append(sutra["id"])
                     continue
                 extraction = result[idx]
+                if not isinstance(extraction, dict):
+                    record_hurdle(sutra["id"], ["extraction is not a JSON object"])
+                    failed.append(sutra["id"])
+                    continue
                 errors = validate_extraction(sutra["id"], extraction)
                 if errors:
                     record_hurdle(sutra["id"], errors)

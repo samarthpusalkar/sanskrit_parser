@@ -299,6 +299,76 @@ def load_commentary(sutra_id: str) -> str:
 # LLM callers
 # ---------------------------------------------------------------------------
 
+def _repair_truncated_json(text: str, expect_array: bool = False) -> Optional[Any]:
+    """Attempt to repair truncated JSON by closing open brackets/braces.
+
+    When a reasoning model hits the token limit, the JSON gets cut off mid-object.
+    This function tries to salvage complete objects from the truncated array.
+    """
+    if expect_array:
+        start = text.find("[")
+        if start == -1:
+            return None
+        # Find the last complete object in the array by scanning for },
+        # or } followed by whitespace/end.
+        substr = text[start:]
+        # Try parsing as-is first
+        try:
+            return json.loads(substr)
+        except json.JSONDecodeError:
+            pass
+        # Find all complete top-level objects
+        objects = []
+        depth = 0
+        obj_start = None
+        in_string = False
+        escape = False
+        for i, c in enumerate(substr):
+            if escape:
+                escape = False
+                continue
+            if c == '\\' and in_string:
+                escape = True
+                continue
+            if c == '"' and not escape:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if c == '{':
+                if depth == 0:
+                    obj_start = i
+                depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth == 0 and obj_start is not None:
+                    obj_str = substr[obj_start:i + 1]
+                    try:
+                        obj = json.loads(obj_str)
+                        objects.append(obj)
+                    except json.JSONDecodeError:
+                        pass
+                    obj_start = None
+        if objects:
+            return objects
+        return None
+    else:
+        start = text.find("{")
+        if start == -1:
+            return None
+        substr = text[start:]
+        try:
+            return json.loads(substr)
+        except json.JSONDecodeError:
+            # Try closing braces
+            for suffix in ['}', '}}', '"}', '"}}', '"]}', '"}']:
+                try:
+                    return json.loads(substr + suffix)
+                except json.JSONDecodeError:
+                    continue
+            return None
+
+
 def _safe_parse_json(text: str, expect_array: bool = False) -> Optional[Any]:
     # First, try parsing the entire response as-is (handles clean JSON output).
     try:
@@ -307,16 +377,12 @@ def _safe_parse_json(text: str, expect_array: bool = False) -> Optional[Any]:
             return result
         if not expect_array and isinstance(result, dict):
             return result
-        # If we expected an array but got a dict, or vice versa, fall through
-        # to the extraction logic below.
         if expect_array and isinstance(result, dict):
-            # Maybe the dict wraps an array (e.g. {"results": [...]}).
             for v in result.values():
                 if isinstance(v, list):
                     return v
             return None
         if not expect_array and isinstance(result, list):
-            # If we expected an object but got a single-element array, unwrap it.
             if len(result) == 1 and isinstance(result[0], dict):
                 return result[0]
             return None
@@ -332,17 +398,23 @@ def _safe_parse_json(text: str, expect_array: bool = False) -> Optional[Any]:
         start = text.find("{")
         end = text.rfind("}") + 1
     if start == -1 or end == 0:
-        return None
+        # Last resort: try to repair truncated JSON
+        return _repair_truncated_json(text, expect_array=expect_array)
     try:
         return json.loads(text[start:end])
     except Exception:
-        return None
+        # JSON was truncated — try to salvage complete objects
+        return _repair_truncated_json(text, expect_array=expect_array)
 
 
 def call_ollama(prompt: str, model: str, timeout: int = 300,
                 expect_array: bool = False, max_retries: int = 3,
-                num_predict: int = 36384) -> Optional[Any]:
-    """Call the Ollama API and return parsed JSON object or array. Retries on timeout."""
+                num_predict: int = 65536) -> Optional[Any]:
+    """Call the Ollama API and return parsed JSON object or array. Retries on timeout.
+
+    num_predict defaults to 32768 to accommodate reasoning models where
+    thinking tokens + response tokens both count against the budget.
+    """
     for attempt in range(max_retries):
         try:
             payload = json.dumps({
