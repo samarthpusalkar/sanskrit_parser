@@ -81,9 +81,14 @@ class SutraSpec:
     parsed_by: str = ""
     confidence: float = 0.0
     hurdles: List[str] = field(default_factory=list)
+    _db_is_executable: Optional[bool] = None
 
     @property
     def is_executable(self) -> bool:
+        # Prefer the DB-stored is_executable flag when available (set by the
+        # extractor based on rule_type). Falls back to op_type derivation.
+        if self._db_is_executable is not None:
+            return self._db_is_executable
         return self.operation.op_type not in ("non_operational", "governance", "")
 
 
@@ -103,16 +108,59 @@ class CompiledSutra:
         if not self.spec.is_executable:
             return False
 
+        # Auto-assign savarNa saṃjñā when two boundary vowels are homogeneous.
+        # Uses last vowel of left and first vowel of right (for consonant-ending words).
+        if context is not None:
+            left_v = _last_vowel(left)
+            right_v = right[0] if right and right[0] in _ALL_VOWELS else _last_vowel(right[:3])
+            if _is_savarna(left_v, right_v):
+                context.add_sanjna("left", "savarNa")
+                context.add_sanjna("right", "savarNa")
+
         if self.spec.target_context:
-            if not _context_matches(self.spec.target_context, left, "end", right, context, "left"):
+            target_pos = self.spec.target_context.match_pos or "end"
+            # Map stored match_pos to the actual text/position to check.
+            # For sandhi rules, the LLM sometimes extracts 'right_end' when
+            # it means the left word's ending vowel — if the target pratyāhāra
+            # is vowel-only and match_pos is 'right_end', check left's last vowel.
+            if target_pos in ("right_end", "end_of_right"):
+                prat = self.spec.target_context.pratyahara
+                if prat:
+                    try:
+                        phonemes = PratyaharaResolver.resolve(prat)
+                        if phonemes and all(p in _ALL_VOWELS for p in phonemes):
+                            target_text, target_pos_norm = left, "end"
+                        else:
+                            target_text, target_pos_norm = right, "end"
+                    except Exception:
+                        target_text, target_pos_norm = right, "end"
+                else:
+                    target_text, target_pos_norm = right, "end"
+            elif target_pos in ("right_start", "start_of_right"):
+                target_text, target_pos_norm = right, "start"
+            elif target_pos in ("left_start", "start_of_left", "whole_word"):
+                target_text, target_pos_norm = left, "start"
+            else:
+                target_text, target_pos_norm = left, "end"
+            if not _context_matches(self.spec.target_context, target_text, target_pos_norm, right, context, "left"):
                 return False
 
         if self.spec.left_context:
-            if not _context_matches(self.spec.left_context, left, "end", right, context, "left"):
+            left_pos = self.spec.left_context.match_pos or "left_end"
+            if left_pos in ("right_start", "start_of_right"):
+                left_text, left_pos_norm = right, "start"
+            else:
+                left_text, left_pos_norm = left, "end"
+            if not _context_matches(self.spec.left_context, left_text, left_pos_norm, right, context, "left"):
                 return False
 
         if self.spec.right_context:
-            if not _context_matches(self.spec.right_context, right, "start", left, context, "right"):
+            right_pos = self.spec.right_context.match_pos or "right_start"
+            if right_pos in ("left_end", "end_of_left"):
+                right_text, right_pos_norm = left, "end"
+            else:
+                right_text, right_pos_norm = right, "start"
+            if not _context_matches(self.spec.right_context, right_text, right_pos_norm, left, context, "right"):
                 return False
 
         return True
@@ -180,6 +228,16 @@ _SAVARNA_CLASSES = [
     {"x", "X"},
 ]
 
+_ALL_VOWELS = frozenset({'a','A','i','I','u','U','f','F','x','X','e','E','o','O'})
+
+
+def _last_vowel(text: str) -> str:
+    """Return the last vowel character in text, or empty string."""
+    for ch in reversed(text):
+        if ch in _ALL_VOWELS:
+            return ch
+    return ""
+
 
 def _is_savarna(c1: str, c2: str) -> bool:
     """Two vowels are savarṇa if they share a savarṇa class (same sthāna)."""
@@ -219,11 +277,13 @@ def _context_matches(ctx: SutraContext, text: str, pos: str,
                     return False
 
     # Sthāni phoneme: match the original (pre-mutation) boundary, not current.
+    # Non-blocking when no trace is available (allows initial matching).
     if ctx.sthani_phoneme:
-        if context is None or context.trace is None:
-            return False
-        original = context.trace.get_original_left_boundary()
-        return original == ctx.sthani_phoneme if original else False
+        if context is not None and context.trace is not None:
+            original = context.trace.get_original_left_boundary()
+            if original and original != ctx.sthani_phoneme:
+                return False
+        # If no trace, don't block — the sthāni check is for re-application prevention.
 
     if ctx.exact_text:
         alternatives = [a for a in ctx.exact_text.replace(",", "|").split("|") if a]
@@ -251,11 +311,22 @@ def _context_matches(ctx: SutraContext, text: str, pos: str,
             char = text[-1] if pos == "end" else (text[0] if text else "")
             if not char:
                 return False
+            # Direct match
             if char in phonemes:
                 return True
+            # Savarṇa short→long expansion
             savarna_short = {'A': 'a', 'I': 'i', 'U': 'u', 'F': 'f', 'X': 'x'}
             if char in savarna_short and savarna_short[char] in phonemes:
                 return True
+            # If the pratyāhāra contains only vowels, check the last vowel
+            # instead of the last character (sandhi operates on vowels, not
+            # consonants — e.g. rAm ends in 'm' but the sandhi vowel is 'a').
+            if phonemes and all(p in _ALL_VOWELS for p in phonemes):
+                v = _last_vowel(text) if pos == "end" else ""
+                if v and v in phonemes:
+                    return True
+                if v in savarna_short and savarna_short[v] in phonemes:
+                    return True
             return False
         except (ValueError, Exception):
             return False

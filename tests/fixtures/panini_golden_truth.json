@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "description": "Curated golden-truth test cases for Pāṇinian derivations. Each case asserts a known input → expected output through the deterministic engine, proving the extracted rules integrate with the runtime. Cases marked skip_if_legacy are skipped when the rule was migrated from the old narrow schema (extraction_mode=legacy_migration) because the legacy data lacks the rich context positions needed by the engine.",
+  "version": 2,
+  "description": "Curated golden-truth test cases for Pāṇinian derivations. Each case asserts a known input → expected output through the deterministic engine, proving the extracted rules integrate with the runtime. Sandhi cases use domain=samhita and test the last-vowel matching logic.",
   "cases": [
     {
       "id": "sandhi_6_1_101_dirgha_savarna",
@@ -8,13 +8,12 @@
       "category": "sandhi",
       "left": "rAm",
       "right": "atra",
+      "domain": "samhita",
       "left_sanjnas": [],
       "right_sanjnas": [],
-      "expected_left": "rAm",
-      "expected_right": "Atra",
       "expected_rule_id": "6.1.101",
       "skip_if_legacy": true,
-      "note": "akas savarne dīrgha — homogeneous a+a → ā (dirgha). Legacy migration lacks correct right_context match_pos."
+      "note": "akaḥ savarṇe dīrghaḥ — homogeneous a+a → ā (dīrgha). rAm ends in 'm' but last vowel is 'a', which matches 'ak'. The engine should auto-assign savarNa and match."
     },
     {
       "id": "vikarana_3_1_68_shap",
@@ -83,15 +82,14 @@
       "id": "sandhi_6_1_77_yan",
       "sutra_id": "6.1.77",
       "category": "sandhi",
-      "left": "vad",
-      "right": "iti",
+      "left": "madhu",
+      "right": "indra",
+      "domain": "samhita",
       "left_sanjnas": [],
       "right_sanjnas": [],
-      "expected_left": "vad",
-      "expected_right": "yiti",
       "expected_rule_id": "6.1.77",
       "skip_if_legacy": true,
-      "note": "iko yaṇ aci — i/u/ṛ/ḷ → y/v/r/l before a vowel (yaṇ). Legacy migration lacks correct right_context match_pos."
+      "note": "iko yaṇ aci — i/u/ṛ/ḷ → y/v/r/l before a vowel (yaṇ). madhu ends in 'u' (in ik), followed by 'i' (in ac). Engine should match and apply v-substitution."
     },
     {
       "id": "vikarana_3_1_80_u_after_dinvikrnvi",

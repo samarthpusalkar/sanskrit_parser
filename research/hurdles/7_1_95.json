@@ -1,7 +1,7 @@
 {
   "sutra_id": "7.1.95",
   "errors": [
-    "batch returned non-array (unparseable response)"
+    "batch result truncated: missing index"
   ],
-  "timestamp": "2026-07-15T12:25:55Z"
+  "timestamp": "2026-07-15T12:53:30Z"
 }

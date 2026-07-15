@@ -198,6 +198,7 @@ class PaniniRuleParser:
             parsed_by=row["extraction_mode"] or "panini_rules",
             confidence=row["confidence"] or 0.0,
             hurdles=_json_loads(row["hurdles"], []),
+            _db_is_executable=bool(row["is_executable"]) if "is_executable" in row.keys() else None,
         )
 
     def parse_chapter(self, chapter_prefix: str) -> List[SutraSpec]:
